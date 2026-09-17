@@ -16,6 +16,11 @@ from datetime import datetime
 import auth
 import db
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 def _generate_temp_password(length: int = 10) -> str:
     alphabet = string.ascii_letters + string.digits

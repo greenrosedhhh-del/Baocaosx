@@ -8,5 +8,7 @@ temp_day_report.xlsx
 test_out.xlsx
 BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx
 .env
+cloudflared.exe
+*.log
 
 .worktrees/

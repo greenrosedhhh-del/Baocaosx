@@ -32,7 +32,7 @@ ALLOWED_ORIGINS = os.environ.get(
 def bootstrap_admin() -> None:
     conn = db.get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) as c FROM users")
+    cursor.execute("SELECT COUNT(*) as c FROM users WHERE role = 'admin'")
     count = cursor.fetchone()["c"]
     if count == 0:
         username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "admin")
@@ -372,6 +372,77 @@ def get_shifts(date: str = Query(..., description="YYYY-MM-DD"), user: dict = De
     return shifts
 
 
+@app.get("/api/shifts/check-status")
+def check_shift_status(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    shift_num: int = Query(..., description="1, 2 or 3"),
+    user: dict = Depends(auth.require_user)
+):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM shifts WHERE report_date = ? AND shift_num = ?",
+        (date, shift_num)
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"exists": False}
+
+    s = dict(row)
+    can_edit = (user["role"] == "admin" or s["created_by_user_id"] == user["id"])
+
+    shift_data = None
+    if can_edit:
+        s_id = s["id"]
+        cursor.execute("SELECT * FROM packaging_items WHERE shift_id = ?", (s_id,))
+        s["packaging"] = [dict(r) for r in cursor.fetchall()]
+        cursor.execute("SELECT * FROM basket_items WHERE shift_id = ?", (s_id,))
+        s["baskets"] = [dict(r) for r in cursor.fetchall()]
+        cursor.execute("SELECT * FROM tumbling_items WHERE shift_id = ?", (s_id,))
+        s["tumbling"] = [dict(r) for r in cursor.fetchall()]
+        shift_data = s
+
+    conn.close()
+    return {
+        "exists": True,
+        "shift_leader": s["shift_leader"],
+        "can_edit": can_edit,
+        "created_at": s["created_at"],
+        "shift_data": shift_data
+    }
+
+
+@app.get("/api/shifts/previous-template")
+def get_previous_shift_template(user: dict = Depends(auth.require_user)):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, report_date, shift_num, shift_leader FROM shifts ORDER BY id DESC LIMIT 1")
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"found": False}
+
+    s_id = row["id"]
+    cursor.execute("SELECT product_name, customer, notes FROM packaging_items WHERE shift_id = ?", (s_id,))
+    packaging = [{"product_name": r["product_name"], "customer": r["customer"], "notes": r["notes"]} for r in cursor.fetchall()]
+
+    cursor.execute("SELECT product_name, customer, steel_grade, notes FROM basket_items WHERE shift_id = ?", (s_id,))
+    baskets = [{"product_name": r["product_name"], "customer": r["customer"], "steel_grade": r["steel_grade"], "notes": r["notes"]} for r in cursor.fetchall()]
+
+    cursor.execute("SELECT product_name, customer, notes FROM tumbling_items WHERE shift_id = ?", (s_id,))
+    tumbling = [{"product_name": r["product_name"], "customer": r["customer"], "notes": r["notes"]} for r in cursor.fetchall()]
+
+    conn.close()
+    return {
+        "found": True,
+        "from_shift": f"Ca {row['shift_num']} ngày {row['report_date']} ({row['shift_leader']})",
+        "packaging": packaging,
+        "baskets": baskets,
+        "tumbling": tumbling
+    }
+
+
 def compute_daily_summary(report_date: str) -> dict:
     conn = db.get_db()
     cursor = conn.cursor()
@@ -584,4 +655,6 @@ app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8088, reload=True)
+    port = int(os.environ.get("PORT", 8088))
+    is_prod = os.environ.get("ENV") == "production"
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=not is_prod)

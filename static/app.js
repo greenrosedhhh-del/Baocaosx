@@ -25,15 +25,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   const endTimeInput = document.getElementById('endTime');
   const currentDateDisplay = document.getElementById('currentDateDisplay');
 
-  const tbodyPackaging = document.getElementById('tbodyPackaging');
-  const tbodyBaskets = document.getElementById('tbodyBaskets');
-  const tbodyTumbling = document.getElementById('tbodyTumbling');
+  const containerPackaging = document.getElementById('containerPackaging');
+  const containerBaskets = document.getElementById('containerBaskets');
+  const containerTumbling = document.getElementById('containerTumbling');
 
   const btnAddPackagingRow = document.getElementById('btnAddPackagingRow');
+  const btnAddPackagingBottom = document.getElementById('btnAddPackagingBottom');
   const btnAddBasketRow = document.getElementById('btnAddBasketRow');
+  const btnAddBasketBottom = document.getElementById('btnAddBasketBottom');
   const btnAddTumblingRow = document.getElementById('btnAddTumblingRow');
+  const btnAddTumblingBottom = document.getElementById('btnAddTumblingBottom');
   const shiftReportForm = document.getElementById('shiftReportForm');
   const btnResetForm = document.getElementById('btnResetForm');
+  const btnSubmitReport = document.getElementById('btnSubmitReport');
+  const btnSubmitText = btnSubmitReport ? btnSubmitReport.querySelector('.btn-text') : null;
+  const btnSubmitSubtext = btnSubmitReport ? btnSubmitReport.querySelector('.btn-subtext') : null;
+
+  const shiftStatusBanner = document.getElementById('shiftStatusBanner');
+  const btnDateToday = document.getElementById('btnDateToday');
+  const btnDateYesterday = document.getElementById('btnDateYesterday');
+  const btnClonePrevious = document.getElementById('btnClonePrevious');
+  const autoSaveIndicator = document.getElementById('autoSaveIndicator');
+  const autoSaveText = document.getElementById('autoSaveText');
 
   const summaryDateInput = document.getElementById('summaryDate');
   const btnLoadSummary = document.getElementById('btnLoadSummary');
@@ -119,7 +132,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  shiftNumSelect.addEventListener('change', updateShiftHours);
+  function getYesterdayDateStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }
+
+  function updateQuickDateChips() {
+    const curVal = reportDateInput.value;
+    const yestVal = getYesterdayDateStr();
+    if (btnDateToday) btnDateToday.classList.toggle('active', curVal === today);
+    if (btnDateYesterday) btnDateYesterday.classList.toggle('active', curVal === yestVal);
+  }
 
   function updateShiftHours() {
     const shift = shiftNumSelect.value;
@@ -129,38 +153,350 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // --- DYNAMIC ROWS MANAGEMENT ---
+  function checkSmartCa3Suggestion(selectedShift) {
+    if (selectedShift === '3') {
+      const curHour = new Date().getHours();
+      const yestDate = getYesterdayDateStr();
+      if (curHour < 12 && reportDateInput.value === today) {
+        if (confirm(`Bạn đang chọn Ca 3 vào buổi sáng.\nTheo quy định phân xưởng, Ca 3 (22:00 đêm qua - 06:00 sáng nay) được tính theo ngày bắt đầu (${formatDateDisplay(yestDate)}).\n\nBạn có muốn tự động chọn ngày ${formatDateDisplay(yestDate)} không?`)) {
+          reportDateInput.value = yestDate;
+        }
+      }
+    }
+  }
 
-  // 1. Packaging Rows
-  function addPackagingRow(data = {}) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>
-        <input type="text" class="pkg-product" value="${data.product_name || 'D25'}" list="prodList" placeholder="Tên SP">
-      </td>
-      <td>
-        <input type="text" class="pkg-customer" value="${data.customer || 'Molycop'}" list="custList" placeholder="Khách hàng">
-      </td>
-      <td>
-        <input type="number" class="pkg-sorted" value="${data.weight_sorted || ''}" placeholder="0" min="0" step="any">
-      </td>
-      <td>
-        <input type="number" class="pkg-waste" value="${data.weight_waste !== undefined ? data.weight_waste : ''}" placeholder="0" min="0" step="any">
-      </td>
-      <td>
-        <span class="rate-badge pkg-rate">-</span>
-      </td>
-      <td>
-        <input type="text" class="pkg-notes" value="${data.notes || ''}" placeholder="Ghi chú">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" class="btn-danger-icon btn-remove-row" title="Xóa dòng">✕</button>
-      </td>
+  shiftNumSelect.addEventListener('change', () => {
+    updateShiftHours();
+    checkSmartCa3Suggestion(shiftNumSelect.value);
+    checkCurrentShiftStatus();
+  });
+
+  reportDateInput.addEventListener('change', () => {
+    checkCurrentShiftStatus();
+  });
+
+  if (btnDateToday) {
+    btnDateToday.addEventListener('click', () => {
+      reportDateInput.value = today;
+      checkCurrentShiftStatus();
+    });
+  }
+
+  if (btnDateYesterday) {
+    btnDateYesterday.addEventListener('click', () => {
+      reportDateInput.value = getYesterdayDateStr();
+      checkCurrentShiftStatus();
+    });
+  }
+
+  // --- DRAFT AUTOSAVE LOGIC (LOCAL STORAGE) ---
+  const DRAFT_KEY_PREFIX = 'vico_draft_';
+
+  function getDraftKey(dateVal, shiftVal) {
+    const u = currentUser ? currentUser.username : 'user';
+    return `${DRAFT_KEY_PREFIX}${u}_${dateVal}_ca${shiftVal}`;
+  }
+
+  let autoSaveTimer = null;
+  function triggerAutoSave() {
+    if (isCheckingStatus) return;
+    const dateVal = reportDateInput.value;
+    const shiftVal = shiftNumSelect.value;
+    if (!dateVal || !shiftVal) return;
+
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      saveDraftToLocalStorage(dateVal, shiftVal);
+    }, 600);
+  }
+
+  function saveDraftToLocalStorage(dateVal, shiftVal) {
+    if (!shiftReportForm) return;
+    const draft = {
+      saved_at: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      safety_ppe: document.getElementById('safetyPpe') ? document.getElementById('safetyPpe').checked : true,
+      safety_equip: document.getElementById('safetyEquip') ? document.getElementById('safetyEquip').checked : true,
+      start_time: startTimeInput.value,
+      end_time: endTimeInput.value,
+      staff_total: document.getElementById('staffTotal') ? document.getElementById('staffTotal').value : 5,
+      staff_present: document.getElementById('staffPresent') ? document.getElementById('staffPresent').value : 5,
+      leave_permitted: document.getElementById('leavePermitted') ? document.getElementById('leavePermitted').value : 0,
+      leave_permitted_names: document.getElementById('leavePermittedNames') ? document.getElementById('leavePermittedNames').value : '',
+      leave_unpermitted: document.getElementById('leaveUnpermitted') ? document.getElementById('leaveUnpermitted').value : 0,
+      leave_unpermitted_names: document.getElementById('leaveUnpermittedNames') ? document.getElementById('leaveUnpermittedNames').value : '',
+      issues: document.getElementById('shiftIssues') ? document.getElementById('shiftIssues').value : '',
+      suggestions: document.getElementById('shiftSuggestions') ? document.getElementById('shiftSuggestions').value : '',
+      packaging: [],
+      baskets: [],
+      tumbling: []
+    };
+
+    containerPackaging.querySelectorAll('.entry-card').forEach(card => {
+      draft.packaging.push({
+        product_name: card.querySelector('.pkg-product') ? card.querySelector('.pkg-product').value : '',
+        customer: card.querySelector('.pkg-customer') ? card.querySelector('.pkg-customer').value : '',
+        weight_sorted: card.querySelector('.pkg-sorted') ? card.querySelector('.pkg-sorted').value : '',
+        weight_waste: card.querySelector('.pkg-waste') ? card.querySelector('.pkg-waste').value : '',
+        notes: card.querySelector('.pkg-notes') ? card.querySelector('.pkg-notes').value : ''
+      });
+    });
+
+    containerBaskets.querySelectorAll('.entry-card').forEach(card => {
+      draft.baskets.push({
+        product_name: card.querySelector('.bsk-product') ? card.querySelector('.bsk-product').value : '',
+        customer: card.querySelector('.bsk-customer') ? card.querySelector('.bsk-customer').value : '',
+        steel_grade: card.querySelector('.bsk-steel') ? card.querySelector('.bsk-steel').value : '',
+        basket_count: card.querySelector('.bsk-count') ? card.querySelector('.bsk-count').value : '',
+        total_weight: card.querySelector('.bsk-weight') ? card.querySelector('.bsk-weight').value : '',
+        notes: card.querySelector('.bsk-notes') ? card.querySelector('.bsk-notes').value : ''
+      });
+    });
+
+    containerTumbling.querySelectorAll('.entry-card').forEach(card => {
+      draft.tumbling.push({
+        product_name: card.querySelector('.tmb-product') ? card.querySelector('.tmb-product').value : '',
+        customer: card.querySelector('.tmb-customer') ? card.querySelector('.tmb-customer').value : '',
+        m1: card.querySelector('.tmb-m1') ? card.querySelector('.tmb-m1').value : '',
+        m2: card.querySelector('.tmb-m2') ? card.querySelector('.tmb-m2').value : '',
+        total_weight: card.querySelector('.tmb-weight') ? card.querySelector('.tmb-weight').value : '',
+        notes: card.querySelector('.tmb-notes') ? card.querySelector('.tmb-notes').value : ''
+      });
+    });
+
+    try {
+      localStorage.setItem(getDraftKey(dateVal, shiftVal), JSON.stringify(draft));
+      if (autoSaveIndicator) {
+        autoSaveIndicator.style.display = 'inline-flex';
+        if (autoSaveText) autoSaveText.textContent = `Đã lưu nháp (${draft.saved_at})`;
+      }
+    } catch (e) {
+      console.warn('Lỗi lưu nháp localStorage:', e);
+    }
+  }
+
+  function checkAndRestoreDraft(dateVal, shiftVal) {
+    try {
+      const raw = localStorage.getItem(getDraftKey(dateVal, shiftVal));
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      const hasContent = (draft.packaging && draft.packaging.some(p => p.weight_sorted || p.weight_waste)) ||
+                         (draft.baskets && draft.baskets.some(b => b.basket_count)) ||
+                         (draft.tumbling && draft.tumbling.some(t => t.m1 || t.m2 || t.total_weight)) ||
+                         (draft.issues && draft.issues.length > 0) ||
+                         (draft.suggestions && draft.suggestions.length > 0);
+      if (hasContent) {
+        populateFormWithShiftData(draft);
+        if (autoSaveIndicator) {
+          autoSaveIndicator.style.display = 'inline-flex';
+          if (autoSaveText) autoSaveText.textContent = `Đã phục hồi nháp (${draft.saved_at || ''})`;
+        }
+      }
+    } catch (e) {
+      console.warn('Lỗi đọc nháp localStorage:', e);
+    }
+  }
+
+  function clearCurrentDraft(dateVal, shiftVal) {
+    try {
+      localStorage.removeItem(getDraftKey(dateVal, shiftVal));
+      if (autoSaveIndicator) {
+        autoSaveIndicator.style.display = 'none';
+      }
+    } catch (e) {}
+  }
+
+  // --- POPULATE FORM WITH SHIFT / DRAFT DATA ---
+  function populateFormWithShiftData(data) {
+    if (data.safety_ppe !== undefined && document.getElementById('safetyPpe')) {
+      document.getElementById('safetyPpe').checked = !!data.safety_ppe;
+    }
+    if (data.safety_equip !== undefined && document.getElementById('safetyEquip')) {
+      document.getElementById('safetyEquip').checked = !!data.safety_equip;
+    }
+    if (data.start_time) startTimeInput.value = data.start_time;
+    if (data.end_time) endTimeInput.value = data.end_time;
+    if (data.staff_total !== undefined && document.getElementById('staffTotal')) {
+      document.getElementById('staffTotal').value = data.staff_total;
+    }
+    if (data.staff_present !== undefined && document.getElementById('staffPresent')) {
+      document.getElementById('staffPresent').value = data.staff_present;
+    }
+    if (data.leave_permitted !== undefined && document.getElementById('leavePermitted')) {
+      document.getElementById('leavePermitted').value = data.leave_permitted;
+    }
+    if (data.leave_permitted_names !== undefined && document.getElementById('leavePermittedNames')) {
+      document.getElementById('leavePermittedNames').value = data.leave_permitted_names || '';
+    }
+    if (data.leave_unpermitted !== undefined && document.getElementById('leaveUnpermitted')) {
+      document.getElementById('leaveUnpermitted').value = data.leave_unpermitted;
+    }
+    if (data.leave_unpermitted_names !== undefined && document.getElementById('leaveUnpermittedNames')) {
+      document.getElementById('leaveUnpermittedNames').value = data.leave_unpermitted_names || '';
+    }
+    if (data.issues !== undefined && document.getElementById('shiftIssues')) {
+      document.getElementById('shiftIssues').value = data.issues || '';
+    }
+    if (data.suggestions !== undefined && document.getElementById('shiftSuggestions')) {
+      document.getElementById('shiftSuggestions').value = data.suggestions || '';
+    }
+
+    // Packaging
+    containerPackaging.innerHTML = '';
+    if (data.packaging && data.packaging.length > 0) {
+      data.packaging.forEach(item => addPackagingCard(item));
+    } else {
+      addPackagingCard();
+    }
+
+    // Baskets
+    containerBaskets.innerHTML = '';
+    if (data.baskets && data.baskets.length > 0) {
+      data.baskets.forEach(item => addBasketCard(item));
+    } else {
+      addBasketCard();
+    }
+
+    // Tumbling
+    containerTumbling.innerHTML = '';
+    if (data.tumbling && data.tumbling.length > 0) {
+      data.tumbling.forEach(item => addTumblingCard(item));
+    } else {
+      addTumblingCard();
+    }
+  }
+
+  // --- CHECK SHIFT STATUS (EXISTS / EDITABLE / LOCKED / NEW) ---
+  let isCheckingStatus = false;
+  async function checkCurrentShiftStatus() {
+    const dateVal = reportDateInput.value;
+    const shiftVal = parseInt(shiftNumSelect.value, 10);
+    if (!dateVal || !shiftVal) return;
+
+    updateQuickDateChips();
+
+    try {
+      isCheckingStatus = true;
+      const res = await fetch(`/api/shifts/check-status?date=${dateVal}&shift_num=${shiftVal}`);
+      if (!res.ok) return;
+      const statusData = await res.json();
+
+      if (statusData.exists) {
+        if (statusData.can_edit) {
+          shiftStatusBanner.style.display = 'flex';
+          shiftStatusBanner.className = 'shift-status-banner info';
+          shiftStatusBanner.innerHTML = `
+            <div class="banner-icon">📝</div>
+            <div class="banner-content">
+              <div class="banner-title">Ca ${shiftVal} ngày ${formatDateDisplay(dateVal)} đã có báo cáo (${statusData.shift_leader})</div>
+              <div class="banner-desc">Đã tự động nạp dữ liệu nộp lúc ${statusData.created_at}. Bạn có thể chỉnh sửa và bấm <strong>CẬP NHẬT BÁO CÁO CA</strong> bên dưới.</div>
+            </div>
+          `;
+          if (btnSubmitReport) {
+            btnSubmitReport.disabled = false;
+            if (btnSubmitText) btnSubmitText.textContent = 'CẬP NHẬT BÁO CÁO CA';
+            if (btnSubmitSubtext) btnSubmitSubtext.textContent = '(Lưu các thay đổi mới)';
+          }
+          if (statusData.shift_data) {
+            populateFormWithShiftData(statusData.shift_data);
+          }
+        } else {
+          shiftStatusBanner.style.display = 'flex';
+          shiftStatusBanner.className = 'shift-status-banner warning';
+          shiftStatusBanner.innerHTML = `
+            <div class="banner-icon">🔒</div>
+            <div class="banner-content">
+              <div class="banner-title">Báo cáo Ca ${shiftVal} ngày ${formatDateDisplay(dateVal)} đã được nộp bởi ${statusData.shift_leader}</div>
+              <div class="banner-desc">Bạn không có quyền chỉnh sửa báo cáo do ca trưởng khác tạo. Chỉ Quản trị viên hoặc chính Trưởng ca đó mới có thể chỉnh sửa.</div>
+            </div>
+          `;
+          if (btnSubmitReport) {
+            btnSubmitReport.disabled = true;
+            if (btnSubmitText) btnSubmitText.textContent = 'KHÔNG CÓ QUYỀN SỬA';
+            if (btnSubmitSubtext) btnSubmitSubtext.textContent = `(Đã nộp bởi ${statusData.shift_leader})`;
+          }
+        }
+      } else {
+        shiftStatusBanner.style.display = 'none';
+        if (btnSubmitReport) {
+          btnSubmitReport.disabled = false;
+          if (btnSubmitText) btnSubmitText.textContent = 'GỬI BÁO CÁO CA';
+          if (btnSubmitSubtext) btnSubmitSubtext.textContent = '(Lưu và tự động tổng hợp)';
+        }
+        checkAndRestoreDraft(dateVal, shiftVal);
+      }
+    } catch (err) {
+      console.warn('Lỗi kiểm tra trạng thái ca:', err);
+    } finally {
+      isCheckingStatus = false;
+    }
+  }
+
+  // --- DYNAMIC CARD MANAGEMENT (MOBILE-FIRST) ---
+
+  function updateCardIndexes() {
+    containerPackaging.querySelectorAll('.entry-card').forEach((card, i) => {
+      card.querySelector('.card-title-text').textContent = `Sản phẩm #${i + 1}`;
+    });
+    containerBaskets.querySelectorAll('.entry-card').forEach((card, i) => {
+      card.querySelector('.card-title-text').textContent = `Giỏ bi #${i + 1}`;
+    });
+    containerTumbling.querySelectorAll('.entry-card').forEach((card, i) => {
+      card.querySelector('.card-title-text').textContent = `Mẻ xóc #${i + 1}`;
+    });
+  }
+
+  // 1. Packaging Card (Bao gói sản phẩm)
+  function addPackagingCard(data = {}) {
+    const card = document.createElement('div');
+    card.className = 'entry-card';
+    card.innerHTML = `
+      <div class="entry-card-header">
+        <div class="entry-card-title">
+          <span class="card-icon">📦</span>
+          <span class="card-title-text">Sản phẩm bao gói</span>
+        </div>
+        <button type="button" class="btn-remove-card" title="Xóa mục này">
+          <span>Xóa</span> ✕
+        </button>
+      </div>
+      <div class="entry-card-body">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label>Tên Sản Phẩm <span class="req">*</span></label>
+            <input type="text" class="pkg-product input-lg" value="${data.product_name || 'D25'}" list="prodList" placeholder="VD: D25">
+          </div>
+          <div class="form-group">
+            <label>Khách Hàng <span class="req">*</span></label>
+            <input type="text" class="pkg-customer input-lg" value="${data.customer || 'Molycop'}" list="custList" placeholder="VD: Molycop">
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-2">
+          <div class="form-group">
+            <label>Khối Lượng Phân Loại (Kg)</label>
+            <input type="number" class="pkg-sorted input-lg input-highlight" value="${data.weight_sorted || ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+          <div class="form-group">
+            <label>Khối Lượng Hủy (Kg)</label>
+            <input type="number" class="pkg-waste input-lg input-highlight" value="${data.weight_waste !== undefined ? data.weight_waste : ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="calc-box mt-2">
+          <span class="calc-title">Tỉ Lệ Hủy Tự Tính:</span>
+          <span class="rate-badge pkg-rate">-</span>
+        </div>
+
+        <div class="form-group mt-2">
+          <label>Ghi Chú</label>
+          <input type="text" class="pkg-notes" value="${data.notes || ''}" placeholder="VD: Nhặt bi lỗi, xếp kho chờ nghiệm thu...">
+        </div>
+      </div>
     `;
 
-    const sortedInput = tr.querySelector('.pkg-sorted');
-    const wasteInput = tr.querySelector('.pkg-waste');
-    const rateBadge = tr.querySelector('.pkg-rate');
+    const sortedInput = card.querySelector('.pkg-sorted');
+    const wasteInput = card.querySelector('.pkg-waste');
+    const rateBadge = card.querySelector('.pkg-rate');
 
     function updateRate() {
       const sorted = parseFloat(sortedInput.value) || 0;
@@ -179,39 +515,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     wasteInput.addEventListener('input', updateRate);
     updateRate();
 
-    tr.querySelector('.btn-remove-row').addEventListener('click', () => tr.remove());
-    tbodyPackaging.appendChild(tr);
+    card.querySelector('.btn-remove-card').addEventListener('click', () => {
+      if (containerPackaging.children.length > 1 || confirm('Xóa mục này?')) {
+        card.remove();
+        updateCardIndexes();
+      }
+    });
+
+    containerPackaging.appendChild(card);
+    updateCardIndexes();
   }
 
-  // 2. Basket Rows (Bi ra sau tôi)
-  function addBasketRow(data = {}) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>
-        <input type="text" class="bsk-product" value="${data.product_name || 'D25'}" list="prodList" placeholder="Tên SP">
-      </td>
-      <td>
-        <input type="text" class="bsk-customer" value="${data.customer || 'Molycop'}" list="custList" placeholder="Khách hàng">
-      </td>
-      <td>
-        <input type="text" class="bsk-steel" value="${data.steel_grade || 'CR18'}" list="steelList" placeholder="Mác thép">
-      </td>
-      <td>
-        <input type="number" class="bsk-count" value="${data.basket_count || ''}" placeholder="0" min="0" step="any">
-      </td>
-      <td>
-        <input type="number" class="bsk-weight" value="${data.total_weight || ''}" placeholder="Tự động (x 350kg)">
-      </td>
-      <td>
-        <input type="text" class="bsk-notes" value="${data.notes || ''}" placeholder="Ghi chú">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" class="btn-danger-icon btn-remove-row" title="Xóa dòng">✕</button>
-      </td>
+  // 2. Basket Card (Số lượng giỏ bi ra sau tôi)
+  function addBasketCard(data = {}) {
+    const card = document.createElement('div');
+    card.className = 'entry-card';
+    card.innerHTML = `
+      <div class="entry-card-header">
+        <div class="entry-card-title">
+          <span class="card-icon">🛒</span>
+          <span class="card-title-text">Giỏ bi sau tôi</span>
+        </div>
+        <button type="button" class="btn-remove-card" title="Xóa mục này">
+          <span>Xóa</span> ✕
+        </button>
+      </div>
+      <div class="entry-card-body">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label>Tên Sản Phẩm <span class="req">*</span></label>
+            <input type="text" class="bsk-product input-lg" value="${data.product_name || 'D25'}" list="prodList" placeholder="VD: D25">
+          </div>
+          <div class="form-group">
+            <label>Khách Hàng <span class="req">*</span></label>
+            <input type="text" class="bsk-customer input-lg" value="${data.customer || 'Molycop'}" list="custList" placeholder="VD: Molycop">
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-2">
+          <div class="form-group">
+            <label>Mác Thép</label>
+            <input type="text" class="bsk-steel input-lg" value="${data.steel_grade || 'CR18'}" list="steelList" placeholder="VD: CR18">
+          </div>
+          <div class="form-group">
+            <label>Tổng Số Giỏ</label>
+            <input type="number" class="bsk-count input-lg input-highlight" value="${data.basket_count || ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="calc-box mt-2">
+          <span class="calc-title">Tổng Khối Lượng (tự nhân 350 Kg/giỏ):</span>
+          <div class="weight-input-group">
+            <input type="number" class="bsk-weight input-lg input-highlight" value="${data.total_weight || ''}" placeholder="Tự tính">
+            <span class="unit-text">Kg</span>
+          </div>
+        </div>
+
+        <div class="form-group mt-2">
+          <label>Ghi Chú</label>
+          <input type="text" class="bsk-notes" value="${data.notes || ''}" placeholder="Ghi chú thêm (nếu có)">
+        </div>
+      </div>
     `;
 
-    const countInput = tr.querySelector('.bsk-count');
-    const weightInput = tr.querySelector('.bsk-weight');
+    const countInput = card.querySelector('.bsk-count');
+    const weightInput = card.querySelector('.bsk-weight');
 
     countInput.addEventListener('input', () => {
       const count = parseFloat(countInput.value) || 0;
@@ -224,49 +592,160 @@ document.addEventListener('DOMContentLoaded', async () => {
       weightInput.dataset.manual = "true";
     });
 
-    tr.querySelector('.btn-remove-row').addEventListener('click', () => tr.remove());
-    tbodyBaskets.appendChild(tr);
+    card.querySelector('.btn-remove-card').addEventListener('click', () => {
+      if (containerBaskets.children.length > 1 || confirm('Xóa mục này?')) {
+        card.remove();
+        updateCardIndexes();
+      }
+    });
+
+    containerBaskets.appendChild(card);
+    updateCardIndexes();
   }
 
-  // 3. Tumbling Rows (Mẻ bi xóc)
-  function addTumblingRow(data = {}) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>
-        <input type="text" class="tmb-product" value="${data.product_name || 'D25'}" list="prodList" placeholder="Tên SP">
-      </td>
-      <td>
-        <input type="text" class="tmb-customer" value="${data.customer || 'Molycop'}" list="custList" placeholder="Khách hàng">
-      </td>
-      <td>
-        <input type="number" class="tmb-m1" value="${data.m1 !== undefined ? data.m1 : ''}" placeholder="0" min="0" step="any">
-      </td>
-      <td>
-        <input type="number" class="tmb-m2" value="${data.m2 !== undefined ? data.m2 : ''}" placeholder="0" min="0" step="any">
-      </td>
-      <td>
-        <input type="number" class="tmb-weight" value="${data.total_weight || ''}" placeholder="Kg" min="0" step="any">
-      </td>
-      <td>
-        <input type="text" class="tmb-notes" value="${data.notes || ''}" placeholder="Khô dầu...">
-      </td>
-      <td style="text-align: center;">
-        <button type="button" class="btn-danger-icon btn-remove-row" title="Xóa dòng">✕</button>
-      </td>
+  // 3. Tumbling Card (Số mẻ bi xóc)
+  function addTumblingCard(data = {}) {
+    const card = document.createElement('div');
+    card.className = 'entry-card';
+    card.innerHTML = `
+      <div class="entry-card-header">
+        <div class="entry-card-title">
+          <span class="card-icon">⚙️</span>
+          <span class="card-title-text">Mẻ bi xóc</span>
+        </div>
+        <button type="button" class="btn-remove-card" title="Xóa mục này">
+          <span>Xóa</span> ✕
+        </button>
+      </div>
+      <div class="entry-card-body">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label>Tên Sản Phẩm <span class="req">*</span></label>
+            <input type="text" class="tmb-product input-lg" value="${data.product_name || 'D25'}" list="prodList" placeholder="VD: D25">
+          </div>
+          <div class="form-group">
+            <label>Khách Hàng <span class="req">*</span></label>
+            <input type="text" class="tmb-customer input-lg" value="${data.customer || 'Molycop'}" list="custList" placeholder="VD: Molycop">
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-2">
+          <div class="form-group">
+            <label>Máy Xóc 1 (Lượt)</label>
+            <input type="number" class="tmb-m1 input-lg input-highlight" value="${data.m1 !== undefined ? data.m1 : ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+          <div class="form-group">
+            <label>Máy Xóc 2 (Lượt)</label>
+            <input type="number" class="tmb-m2 input-lg input-highlight" value="${data.m2 !== undefined ? data.m2 : ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-2">
+          <div class="form-group">
+            <label>Tổng Khối Lượng (Kg)</label>
+            <input type="number" class="tmb-weight input-lg input-highlight" value="${data.total_weight || ''}" placeholder="0" min="0" step="any" inputmode="numeric">
+          </div>
+          <div class="form-group">
+            <label>Ghi Chú (Khô dầu...)</label>
+            <input type="text" class="tmb-notes input-lg" value="${data.notes || ''}" placeholder="VD: Khô dầu...">
+          </div>
+        </div>
+      </div>
     `;
 
-    tr.querySelector('.btn-remove-row').addEventListener('click', () => tr.remove());
-    tbodyTumbling.appendChild(tr);
+    card.querySelector('.btn-remove-card').addEventListener('click', () => {
+      if (containerTumbling.children.length > 1 || confirm('Xóa mục này?')) {
+        card.remove();
+        updateCardIndexes();
+      }
+    });
+
+    containerTumbling.appendChild(card);
+    updateCardIndexes();
   }
 
-  // Add initial empty rows
-  addPackagingRow();
-  addBasketRow();
-  addTumblingRow();
+  // Add initial cards
+  addPackagingCard();
+  addBasketCard();
+  addTumblingCard();
 
-  btnAddPackagingRow.addEventListener('click', () => addPackagingRow());
-  btnAddBasketRow.addEventListener('click', () => addBasketRow());
-  btnAddTumblingRow.addEventListener('click', () => addTumblingRow());
+  btnAddPackagingRow.addEventListener('click', () => addPackagingCard());
+  if (btnAddPackagingBottom) btnAddPackagingBottom.addEventListener('click', () => addPackagingCard());
+
+  btnAddBasketRow.addEventListener('click', () => addBasketCard());
+  if (btnAddBasketBottom) btnAddBasketBottom.addEventListener('click', () => addBasketCard());
+
+  btnAddTumblingRow.addEventListener('click', () => addTumblingCard());
+  if (btnAddTumblingBottom) btnAddTumblingBottom.addEventListener('click', () => addTumblingCard());
+
+  // Clone template from previous shift
+  if (btnClonePrevious) {
+    btnClonePrevious.addEventListener('click', async () => {
+      try {
+        btnClonePrevious.disabled = true;
+        btnClonePrevious.innerHTML = '⏳ Đang sao chép...';
+
+        const res = await fetch('/api/shifts/previous-template');
+        if (!res.ok) {
+          showToast('Không thể lấy dữ liệu ca trước');
+          return;
+        }
+        const data = await res.json();
+        if (!data.found) {
+          showToast('Chưa có ca nào trước đó để sao chép!');
+          return;
+        }
+
+        if (data.packaging && data.packaging.length > 0) {
+          containerPackaging.innerHTML = '';
+          data.packaging.forEach(item => {
+            addPackagingCard({
+              product_name: item.product_name,
+              customer: item.customer,
+              notes: item.notes || ''
+            });
+          });
+        }
+
+        if (data.baskets && data.baskets.length > 0) {
+          containerBaskets.innerHTML = '';
+          data.baskets.forEach(item => {
+            addBasketCard({
+              product_name: item.product_name,
+              customer: item.customer,
+              steel_grade: item.steel_grade || 'CR18',
+              notes: item.notes || ''
+            });
+          });
+        }
+
+        if (data.tumbling && data.tumbling.length > 0) {
+          containerTumbling.innerHTML = '';
+          data.tumbling.forEach(item => {
+            addTumblingCard({
+              product_name: item.product_name,
+              customer: item.customer,
+              notes: item.notes || ''
+            });
+          });
+        }
+
+        showToast(`✅ Đã sao chép danh mục từ ${data.from_shift}!`);
+        triggerAutoSave();
+      } catch (err) {
+        showToast('Lỗi: ' + err.message);
+      } finally {
+        btnClonePrevious.disabled = false;
+        btnClonePrevious.innerHTML = '📋 Sao chép từ ca trước';
+      }
+    });
+  }
+
+  // Auto-save draft on any user input
+  shiftReportForm.addEventListener('input', triggerAutoSave);
+
+  // Initial check on load
+  checkCurrentShiftStatus();
 
   // --- SUBMIT REPORT FORM ---
   shiftReportForm.addEventListener('submit', async (e) => {
@@ -280,14 +759,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Gather packaging items
+    // Gather packaging items from cards
     const packaging = [];
-    tbodyPackaging.querySelectorAll('tr').forEach(tr => {
-      const pName = tr.querySelector('.pkg-product').value.trim();
-      const cName = tr.querySelector('.pkg-customer').value.trim();
-      const sVal = parseFloat(tr.querySelector('.pkg-sorted').value) || 0;
-      const wVal = parseFloat(tr.querySelector('.pkg-waste').value) || 0;
-      const notes = tr.querySelector('.pkg-notes').value.trim();
+    containerPackaging.querySelectorAll('.entry-card').forEach(card => {
+      const pName = card.querySelector('.pkg-product').value.trim();
+      const cName = card.querySelector('.pkg-customer').value.trim();
+      const sVal = parseFloat(card.querySelector('.pkg-sorted').value) || 0;
+      const wVal = parseFloat(card.querySelector('.pkg-waste').value) || 0;
+      const notes = card.querySelector('.pkg-notes').value.trim();
       if (pName || cName || sVal > 0) {
         packaging.push({
           product_name: pName,
@@ -299,15 +778,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Gather basket items
+    // Gather basket items from cards
     const baskets = [];
-    tbodyBaskets.querySelectorAll('tr').forEach(tr => {
-      const pName = tr.querySelector('.bsk-product').value.trim();
-      const cName = tr.querySelector('.bsk-customer').value.trim();
-      const steel = tr.querySelector('.bsk-steel').value.trim();
-      const count = parseFloat(tr.querySelector('.bsk-count').value) || 0;
-      const weight = parseFloat(tr.querySelector('.bsk-weight').value) || (count * 350);
-      const notes = tr.querySelector('.bsk-notes').value.trim();
+    containerBaskets.querySelectorAll('.entry-card').forEach(card => {
+      const pName = card.querySelector('.bsk-product').value.trim();
+      const cName = card.querySelector('.bsk-customer').value.trim();
+      const steel = card.querySelector('.bsk-steel').value.trim();
+      const count = parseFloat(card.querySelector('.bsk-count').value) || 0;
+      const weight = parseFloat(card.querySelector('.bsk-weight').value) || (count * 350);
+      const notes = card.querySelector('.bsk-notes').value.trim();
       if (pName || cName || count > 0) {
         baskets.push({
           product_name: pName,
@@ -320,15 +799,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Gather tumbling items
+    // Gather tumbling items from cards
     const tumbling = [];
-    tbodyTumbling.querySelectorAll('tr').forEach(tr => {
-      const pName = tr.querySelector('.tmb-product').value.trim();
-      const cName = tr.querySelector('.tmb-customer').value.trim();
-      const m1 = parseFloat(tr.querySelector('.tmb-m1').value) || 0;
-      const m2 = parseFloat(tr.querySelector('.tmb-m2').value) || 0;
-      const weight = parseFloat(tr.querySelector('.tmb-weight').value) || 0;
-      const notes = tr.querySelector('.tmb-notes').value.trim();
+    containerTumbling.querySelectorAll('.entry-card').forEach(card => {
+      const pName = card.querySelector('.tmb-product').value.trim();
+      const cName = card.querySelector('.tmb-customer').value.trim();
+      const m1 = parseFloat(card.querySelector('.tmb-m1').value) || 0;
+      const m2 = parseFloat(card.querySelector('.tmb-m2').value) || 0;
+      const weight = parseFloat(card.querySelector('.tmb-weight').value) || 0;
+      const notes = card.querySelector('.tmb-notes').value.trim();
       if (pName || cName || m1 > 0 || m2 > 0 || weight > 0) {
         tumbling.push({
           product_name: pName,
@@ -375,11 +854,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await res.json();
       if (res.ok) {
         showToast(data.message || 'Lưu báo cáo thành công!');
-        // Switch to Summary Tab to see the progress
-        setTimeout(() => {
-          summaryDateInput.value = reportDate;
-          document.getElementById('btnTabSummary').click();
-        }, 1200);
+        clearCurrentDraft(reportDate, shiftNum);
+        await checkCurrentShiftStatus();
+        if (currentUser.role === 'admin') {
+          setTimeout(() => {
+            summaryDateInput.value = reportDate;
+            document.getElementById('btnTabSummary').click();
+          }, 1200);
+        } else {
+          setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }, 500);
+        }
       } else {
         alert('Lỗi: ' + (data.detail || 'Không thể lưu báo cáo'));
       }
@@ -387,22 +873,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       alert('Lỗi kết nối máy chủ: ' + err.message);
     } finally {
       const btnSubmit = document.getElementById('btnSubmitReport');
-      btnSubmit.disabled = false;
-      btnSubmit.querySelector('.btn-text').textContent = 'GỬI BÁO CÁO CA';
+      if (btnSubmit) btnSubmit.disabled = false;
     }
   });
 
   btnResetForm.addEventListener('click', () => {
     if (confirm('Bạn có chắc chắn muốn làm mới toàn bộ form?')) {
+      clearCurrentDraft(reportDateInput.value, shiftNumSelect.value);
       shiftReportForm.reset();
       reportDateInput.value = today;
+      shiftLeaderInput.value = currentUser.full_name;
       updateShiftHours();
-      tbodyPackaging.innerHTML = '';
-      tbodyBaskets.innerHTML = '';
-      tbodyTumbling.innerHTML = '';
-      addPackagingRow();
-      addBasketRow();
-      addTumblingRow();
+      containerPackaging.innerHTML = '';
+      containerBaskets.innerHTML = '';
+      containerTumbling.innerHTML = '';
+      addPackagingCard();
+      addBasketCard();
+      addTumblingCard();
+      checkCurrentShiftStatus();
     }
   });
 

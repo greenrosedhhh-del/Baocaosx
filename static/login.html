@@ -3,36 +3,81 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Đăng Nhập - VICO Báo Cáo Sản Xuất</title>
+  <title>Đăng Nhập - VICO Báo Cáo Sản Xuất PX NLLT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-body">
+  <!-- Background Ambient Glows -->
+  <div class="login-bg-glow glow-1"></div>
+  <div class="login-bg-glow glow-2"></div>
+
   <div class="login-wrap">
     <div class="card login-card">
-      <div class="brand" style="justify-content:center; margin-bottom: 1.5rem;">
-        <div class="brand-badge">VICO</div>
-        <div class="brand-info">
-          <h1 style="color: var(--slate-900);">PX Nhiệt Luyện</h1>
-          <p style="color: var(--slate-600);">Đăng nhập hệ thống báo cáo</p>
+      
+      <!-- BRAND HEADER -->
+      <div class="login-brand-header">
+        <div class="login-brand-top">
+          <div class="brand-badge login-badge">VICO</div>
+          <div class="login-company-meta">
+            <span class="company-sub">CÔNG TY TNHH THẮNG LỢI</span>
+            <h1 class="company-title">PX NHIỆT LUYỆN</h1>
+          </div>
+        </div>
+        <div class="system-tag-pill">
+          <span class="live-dot-pulse"></span>
+          Báo Cáo Sản Xuất Trực Tuyến
         </div>
       </div>
-      <form id="loginForm">
-        <div class="form-group mt-2">
+
+
+      <!-- LOGIN FORM -->
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
           <label for="loginUsername">Tên đăng nhập</label>
-          <input type="text" id="loginUsername" required autofocus>
+          <div class="input-with-icon">
+            <span class="input-icon">👤</span>
+            <input type="text" id="loginUsername" placeholder="Nhập tên đăng nhập" required autofocus autocomplete="username">
+          </div>
         </div>
+
         <div class="form-group mt-2">
           <label for="loginPassword">Mật khẩu</label>
-          <input type="password" id="loginPassword" required>
+          <div class="input-with-icon">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="loginPassword" placeholder="Nhập mật khẩu" required autocomplete="current-password">
+            <button type="button" id="btnTogglePassword" class="btn-toggle-pw" title="Hiện/ẩn mật khẩu">
+              <span id="pwToggleIcon">👁️</span>
+            </button>
+          </div>
         </div>
-        <div id="loginError" class="login-error" style="display:none;"></div>
-        <button type="submit" class="btn btn-primary btn-lg mt-2" style="width:100%;">Đăng Nhập</button>
+
+        <div id="loginError" class="login-error-box" style="display:none;">
+          <span class="error-icon">⚠️</span>
+          <span id="loginErrorText" class="error-text"></span>
+        </div>
+
+        <button type="submit" id="btnSubmitLogin" class="btn btn-primary btn-lg btn-login-submit mt-3">
+          <span class="btn-login-text">ĐĂNG NHẬP HỆ THỐNG</span>
+        </button>
       </form>
+
+      <!-- FOOTER INFO -->
+      <div class="login-card-footer">
+        <div class="footer-status">
+          <span class="server-status-dot"></span>
+          <span>Máy chủ trực tuyến • Cổng 8088</span>
+        </div>
+        <div class="footer-copyright">
+          © 2026 VICO PX NLLT • Lưu trữ & Bảo mật nội bộ
+        </div>
+      </div>
+
     </div>
   </div>
+
   <script src="login.js"></script>
 </body>
 </html>

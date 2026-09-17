@@ -62,14 +62,29 @@
         
         <!-- THÔNG TIN CHUNG & CA LÀM VIỆC -->
         <div class="card form-section">
-          <div class="section-header">
-            <span class="section-num">1</span>
-            <h2>Thông Tin Ca Làm Việc & Chấm Công</h2>
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num">1</span>
+              <h2>Thông Tin Ca Làm Việc & Chấm Công</h2>
+            </div>
+            <div id="autoSaveIndicator" class="autosave-badge" style="display: none;">
+              <span class="autosave-dot"></span>
+              <span id="autoSaveText">Đã lưu nháp</span>
+            </div>
           </div>
+
+          <!-- BANNER TRẠNG THÁI CA (ĐÃ NỘP / SỬA / MỚI) -->
+          <div id="shiftStatusBanner" class="shift-status-banner" style="display: none;"></div>
 
           <div class="grid grid-3">
             <div class="form-group">
-              <label for="reportDate">Ngày Báo Cáo <span class="req">*</span></label>
+              <div class="label-with-chips">
+                <label for="reportDate">Ngày Báo Cáo <span class="req">*</span></label>
+                <div class="quick-date-chips">
+                  <button type="button" class="btn-chip" id="btnDateToday">Hôm nay</button>
+                  <button type="button" class="btn-chip" id="btnDateYesterday">Hôm qua</button>
+                </div>
+              </div>
               <input type="date" id="reportDate" required>
             </div>
             <div class="form-group">
@@ -153,28 +168,21 @@
               <span class="section-num">2</span>
               <h2>Bao Gói Sản Phẩm</h2>
             </div>
-            <button type="button" class="btn btn-sm btn-outline" id="btnAddPackagingRow">+ Thêm Sản Phẩm</button>
+            <div class="header-action-group">
+              <button type="button" class="btn btn-sm btn-outline-info" id="btnClonePrevious" title="Lấy danh mục sản phẩm từ ca gần nhất">
+                📋 Sao chép từ ca trước
+              </button>
+              <button type="button" class="btn btn-sm btn-outline" id="btnAddPackagingRow">+ Thêm Mục</button>
+            </div>
           </div>
           <p class="section-hint">Nhập khối lượng phân loại & hủy. Hệ thống tự động tính tỷ lệ hủy (%).</p>
 
-          <div class="table-responsive">
-            <table class="data-table" id="tablePackaging">
-              <thead>
-                <tr>
-                  <th style="width: 18%;">Tên SP</th>
-                  <th style="width: 22%;">Khách Hàng</th>
-                  <th style="width: 18%;">KL Phân Loại (Kg)</th>
-                  <th style="width: 16%;">KL Hủy (Kg)</th>
-                  <th style="width: 12%;">Tỉ Lệ Hủy</th>
-                  <th style="width: 20%;">Ghi Chú</th>
-                  <th style="width: 6%;">Xóa</th>
-                </tr>
-              </thead>
-              <tbody id="tbodyPackaging">
-                <!-- Rows injected dynamically -->
-              </tbody>
-            </table>
+          <div class="item-cards-list" id="containerPackaging">
+            <!-- Dynamic item cards injected here -->
           </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddPackagingBottom">
+            <span>➕ Thêm Sản Phẩm Khác</span>
+          </button>
         </div>
 
         <!-- MỤC 2: SỐ LƯỢNG GIỎ BI RA SAU TÔI -->
@@ -184,28 +192,16 @@
               <span class="section-num">3</span>
               <h2>Số Lượng Giỏ Bi Ra Sau Tôi</h2>
             </div>
-            <button type="button" class="btn btn-sm btn-outline" id="btnAddBasketRow">+ Thêm Dòng</button>
+            <button type="button" class="btn btn-sm btn-outline" id="btnAddBasketRow">+ Thêm Mục</button>
           </div>
           <p class="section-hint">Gõ số giỏ, hệ thống tự động nhân hệ số chuẩn <strong>350 Kg / Giỏ</strong>.</p>
 
-          <div class="table-responsive">
-            <table class="data-table" id="tableBaskets">
-              <thead>
-                <tr>
-                  <th style="width: 18%;">Tên SP</th>
-                  <th style="width: 22%;">Khách Hàng</th>
-                  <th style="width: 14%;">Mác Thép</th>
-                  <th style="width: 14%;">Tổng Số Giỏ</th>
-                  <th style="width: 18%;">Tổng Khối Lượng (Kg)</th>
-                  <th style="width: 20%;">Ghi Chú</th>
-                  <th style="width: 6%;">Xóa</th>
-                </tr>
-              </thead>
-              <tbody id="tbodyBaskets">
-                <!-- Rows injected dynamically -->
-              </tbody>
-            </table>
+          <div class="item-cards-list" id="containerBaskets">
+            <!-- Dynamic item cards injected here -->
           </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddBasketBottom">
+            <span>➕ Thêm Dòng Giỏ Bi Khác</span>
+          </button>
         </div>
 
         <!-- MỤC 3: SỐ MẺ BI XÓC -->
@@ -215,27 +211,15 @@
               <span class="section-num">4</span>
               <h2>Số Mẻ Bi Xóc</h2>
             </div>
-            <button type="button" class="btn btn-sm btn-outline" id="btnAddTumblingRow">+ Thêm Dòng Bi Xóc</button>
+            <button type="button" class="btn btn-sm btn-outline" id="btnAddTumblingRow">+ Thêm Mục</button>
           </div>
 
-          <div class="table-responsive">
-            <table class="data-table" id="tableTumbling">
-              <thead>
-                <tr>
-                  <th style="width: 18%;">Tên SP</th>
-                  <th style="width: 22%;">Khách Hàng</th>
-                  <th style="width: 14%;">Máy Xóc 1 (Lượt)</th>
-                  <th style="width: 14%;">Máy Xóc 2 (Lượt)</th>
-                  <th style="width: 18%;">Tổng KL (Kg)</th>
-                  <th style="width: 20%;">Ghi Chú (Khô dầu...)</th>
-                  <th style="width: 6%;">Xóa</th>
-                </tr>
-              </thead>
-              <tbody id="tbodyTumbling">
-                <!-- Rows injected dynamically -->
-              </tbody>
-            </table>
+          <div class="item-cards-list" id="containerTumbling">
+            <!-- Dynamic item cards injected here -->
           </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddTumblingBottom">
+            <span>➕ Thêm Mẻ Bi Xóc Khác</span>
+          </button>
         </div>
 
         <!-- SỰ CỐ TRONG CA & ĐỀ XUẤT -->
@@ -388,6 +372,26 @@
   <div id="toastNotification" class="toast">
     <span id="toastMessage">Thông báo</span>
   </div>
+
+  <!-- DATALISTS FOR QUICK PICK -->
+  <datalist id="prodList">
+    <option value="D25">
+    <option value="D40">
+    <option value="D60">
+    <option value="D80">
+  </datalist>
+  <datalist id="custList">
+    <option value="Molycop">
+    <option value="Nhập TQ">
+    <option value="Khô dầu">
+    <option value="VICO">
+  </datalist>
+  <datalist id="steelList">
+    <option value="CR18">
+    <option value="18">
+    <option value="CR20">
+    <option value="B2">
+  </datalist>
 
   <script src="app.js"></script>
 </body>
