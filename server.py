@@ -4,6 +4,7 @@ Provides REST APIs for shift report entry, auto-aggregation across shifts, and E
 """
 import os
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
@@ -189,14 +190,19 @@ def create_user(payload: UserCreateModel, admin: dict = Depends(auth.require_adm
         conn.close()
         raise HTTPException(status_code=400, detail=f"Tên đăng nhập '{payload.username}' đã tồn tại")
 
-    cursor.execute(
-        "INSERT INTO users (username, password_hash, full_name, role, active, created_at) "
-        "VALUES (?, ?, ?, ?, 1, ?)",
-        (payload.username, auth.hash_password(payload.password), payload.full_name, payload.role,
-         datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-    )
-    conn.commit()
-    user_id = cursor.lastrowid
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, full_name, role, active, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (payload.username, auth.hash_password(payload.password), payload.full_name, payload.role,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Tên đăng nhập '{payload.username}' đã tồn tại")
     conn.close()
     return {"status": "success", "id": user_id}
 

@@ -57,3 +57,28 @@ def test_leader_account_cannot_manage_users(client):
 
     resp = client.get("/api/admin/users")
     assert resp.status_code == 403
+
+
+def test_create_user_rejects_invalid_role(client):
+    _login_admin(client)
+    resp = client.post("/api/admin/users", json={
+        "username": "baduser", "full_name": "Bad", "password": "leader123", "role": "superadmin"
+    })
+    assert resp.status_code == 400
+
+
+def test_leader_cannot_create_or_update_users(client):
+    _login_admin(client)
+    client.post("/api/admin/users", json={
+        "username": "quang2", "full_name": "Quang2", "password": "leader123", "role": "leader"
+    })
+    client.post("/api/auth/logout")
+    client.post("/api/auth/login", json={"username": "quang2", "password": "leader123"})
+
+    resp = client.post("/api/admin/users", json={
+        "username": "x", "full_name": "X", "password": "abc12345", "role": "leader"
+    })
+    assert resp.status_code == 403
+
+    resp = client.patch("/api/admin/users/1", json={"active": False})
+    assert resp.status_code == 403
