@@ -771,22 +771,40 @@ document.addEventListener('DOMContentLoaded', async () => {
           </td>
         `;
         tr.querySelector('.btn-toggle-active').addEventListener('click', async () => {
-          await fetch(`/api/admin/users/${u.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ active: !u.active })
-          });
-          loadUsers();
+          try {
+            const res = await fetch(`/api/admin/users/${u.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ active: !u.active })
+            });
+            if (res.ok) {
+              loadUsers();
+            } else {
+              const data = await res.json();
+              alert('Lỗi: ' + (data.detail || 'Không thể cập nhật tài khoản'));
+            }
+          } catch (err) {
+            alert('Lỗi kết nối: ' + err.message);
+          }
         });
         tr.querySelector('.btn-reset-password').addEventListener('click', async () => {
           const newPassword = prompt(`Nhập mật khẩu mới cho ${u.full_name}:`);
           if (!newPassword) return;
-          await fetch(`/api/admin/users/${u.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: newPassword })
-          });
-          showToast('Đã đổi mật khẩu!');
+          try {
+            const res = await fetch(`/api/admin/users/${u.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ password: newPassword })
+            });
+            if (res.ok) {
+              showToast('Đã đổi mật khẩu!');
+            } else {
+              const data = await res.json();
+              alert('Lỗi: ' + (data.detail || 'Không thể cập nhật tài khoản'));
+            }
+          } catch (err) {
+            alert('Lỗi kết nối: ' + err.message);
+          }
         });
         tbodyUsers.appendChild(tr);
       });
