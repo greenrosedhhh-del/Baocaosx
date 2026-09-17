@@ -113,6 +113,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadSummary();
       } else if (targetId === 'history-tab') {
         loadHistory();
+      } else if (targetId === 'admin-tab') {
+        loadUsers();
       }
     });
   });
@@ -715,6 +717,81 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch (e) {
       tbodyHistory.innerHTML = `<tr><td colspan="5" style="color:red;">Lỗi tải lịch sử: ${e.message}</td></tr>`;
+    }
+  }
+
+  // --- TAB 4: ADMIN USER MANAGEMENT ---
+  const tbodyUsers = document.getElementById('tbodyUsers');
+  const createUserForm = document.getElementById('createUserForm');
+
+  if (createUserForm) {
+    createUserForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        username: document.getElementById('newUsername').value.trim(),
+        full_name: document.getElementById('newFullName').value.trim(),
+        password: document.getElementById('newPassword').value,
+        role: document.getElementById('newRole').value
+      };
+      try {
+        const res = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast('Đã tạo tài khoản mới!');
+          createUserForm.reset();
+          loadUsers();
+        } else {
+          alert('Lỗi: ' + (data.detail || 'Không thể tạo tài khoản'));
+        }
+      } catch (err) {
+        alert('Lỗi kết nối: ' + err.message);
+      }
+    });
+  }
+
+  async function loadUsers() {
+    try {
+      const res = await fetch('/api/admin/users');
+      const users = await res.json();
+      tbodyUsers.innerHTML = '';
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.username}</td>
+          <td>${u.full_name}</td>
+          <td>${u.role === 'admin' ? 'Admin' : 'Ca trưởng'}</td>
+          <td><span class="rate-badge ${u.active ? 'good' : 'bad'}">${u.active ? 'Đang hoạt động' : 'Đã khóa'}</span></td>
+          <td>
+            <button class="btn btn-sm btn-outline btn-toggle-active">${u.active ? 'Khóa' : 'Mở khóa'}</button>
+            <button class="btn btn-sm btn-outline btn-reset-password">Đổi mật khẩu</button>
+          </td>
+        `;
+        tr.querySelector('.btn-toggle-active').addEventListener('click', async () => {
+          await fetch(`/api/admin/users/${u.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: !u.active })
+          });
+          loadUsers();
+        });
+        tr.querySelector('.btn-reset-password').addEventListener('click', async () => {
+          const newPassword = prompt(`Nhập mật khẩu mới cho ${u.full_name}:`);
+          if (!newPassword) return;
+          await fetch(`/api/admin/users/${u.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: newPassword })
+          });
+          showToast('Đã đổi mật khẩu!');
+        });
+        tbodyUsers.appendChild(tr);
+      });
+    } catch (e) {
+      tbodyUsers.innerHTML = `<tr><td colspan="5" style="color:red;">Lỗi tải danh sách: ${e.message}</td></tr>`;
     }
   }
 
