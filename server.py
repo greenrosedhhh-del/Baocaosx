@@ -8,29 +8,62 @@ from contextlib import asynccontextmanager
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 
+import auth
 import db
 import excel_service
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-secret-change-me")
+IS_PRODUCTION = os.environ.get("ENV") == "production"
+ALLOWED_ORIGINS = os.environ.get(
+    "ALLOWED_ORIGINS", "http://localhost:8088,http://127.0.0.1:8088"
+).split(",")
+
+
+def bootstrap_admin() -> None:
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as c FROM users")
+    count = cursor.fetchone()["c"]
+    if count == 0:
+        username = os.environ.get("ADMIN_BOOTSTRAP_USERNAME", "admin")
+        password = os.environ.get("ADMIN_BOOTSTRAP_PASSWORD", "admin123")
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, full_name, role, active, created_at) "
+            "VALUES (?, ?, ?, 'admin', 1, ?)",
+            (username, auth.hash_password(password), "Quản trị viên",
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        conn.commit()
+    conn.close()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_schema()
+    bootstrap_admin()
     yield
 
 
-app = FastAPI(title="VICO Production Reporting System", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="VICO Production Reporting System", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    same_site="lax",
+    https_only=IS_PRODUCTION,
+)
+app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,7 +104,6 @@ class TumblingItemModel(BaseModel):
 class ShiftReportModel(BaseModel):
     report_date: str
     shift_num: int
-    shift_leader: str
     safety_ppe: bool = True
     safety_equip: bool = True
     staff_total: int = 5
@@ -89,12 +121,120 @@ class ShiftReportModel(BaseModel):
     tumbling: List[TumblingItemModel] = []
 
 
-# ---------------- API ROUTES ----------------
+class LoginModel(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreateModel(BaseModel):
+    username: str
+    full_name: str
+    password: str
+    role: str = "leader"
+
+
+class UserUpdateModel(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    active: Optional[bool] = None
+
+
+# ---------------- AUTH ROUTES ----------------
+
+@app.post("/api/auth/login")
+def login(payload: LoginModel, request: Request):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ?", (payload.username,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row or not row["active"] or not auth.verify_password(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Sai tên đăng nhập hoặc mật khẩu")
+    request.session["user_id"] = row["id"]
+    return {"username": row["username"], "full_name": row["full_name"], "role": row["role"]}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request):
+    request.session.clear()
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/me")
+def me(user: dict = Depends(auth.require_user)):
+    return {"username": user["username"], "full_name": user["full_name"], "role": user["role"]}
+
+
+# ---------------- ADMIN: USER MANAGEMENT ----------------
+
+@app.get("/api/admin/users")
+def list_users(admin: dict = Depends(auth.require_admin)):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, full_name, role, active, created_at FROM users ORDER BY id")
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return users
+
+
+@app.post("/api/admin/users")
+def create_user(payload: UserCreateModel, admin: dict = Depends(auth.require_admin)):
+    if payload.role not in ("admin", "leader"):
+        raise HTTPException(status_code=400, detail="role phải là 'admin' hoặc 'leader'")
+
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE username = ?", (payload.username,))
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Tên đăng nhập '{payload.username}' đã tồn tại")
+
+    cursor.execute(
+        "INSERT INTO users (username, password_hash, full_name, role, active, created_at) "
+        "VALUES (?, ?, ?, ?, 1, ?)",
+        (payload.username, auth.hash_password(payload.password), payload.full_name, payload.role,
+         datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    conn.commit()
+    user_id = cursor.lastrowid
+    conn.close()
+    return {"status": "success", "id": user_id}
+
+
+@app.patch("/api/admin/users/{user_id}")
+def update_user(user_id: int, payload: UserUpdateModel, admin: dict = Depends(auth.require_admin)):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+
+    updates = []
+    params = []
+    if payload.full_name is not None:
+        updates.append("full_name = ?")
+        params.append(payload.full_name)
+    if payload.password is not None:
+        updates.append("password_hash = ?")
+        params.append(auth.hash_password(payload.password))
+    if payload.active is not None:
+        updates.append("active = ?")
+        params.append(int(payload.active))
+
+    if updates:
+        params.append(user_id)
+        cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    conn.close()
+    return {"status": "success"}
+
+
+# ---------------- SHIFT REPORT ROUTES ----------------
 
 @app.get("/api/presets")
-def get_presets():
+def get_presets(user: dict = Depends(auth.require_user)):
     return {
-        "leaders": ["Trọng", "Hải", "Tân", "Quang"],
         "products": ["D25", "D40", "D60", "D80"],
         "customers": ["Molycop", "Nhập TQ", "Khô dầu", "VICO"],
         "steel_grades": ["CR18", "18", "CR20", "B2"],
@@ -107,36 +247,43 @@ def get_presets():
 
 
 @app.post("/api/shifts")
-def save_shift_report(report: ShiftReportModel):
+def save_shift_report(report: ShiftReportModel, user: dict = Depends(auth.require_user)):
     conn = db.get_db()
     cursor = conn.cursor()
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Check if shift already exists
+        shift_leader_name = user["full_name"]
+
         cursor.execute(
-            "SELECT id FROM shifts WHERE report_date = ? AND shift_num = ?",
+            "SELECT id, created_by_user_id FROM shifts WHERE report_date = ? AND shift_num = ?",
             (report.report_date, report.shift_num)
         )
         existing = cursor.fetchone()
 
         if existing:
+            owner_id = existing["created_by_user_id"]
+            if owner_id is not None and owner_id != user["id"] and user["role"] != "admin":
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Báo cáo Ca {report.shift_num} ngày {report.report_date} đã được ca trưởng khác nộp, bạn không có quyền sửa."
+                )
             shift_id = existing["id"]
             cursor.execute("""
             UPDATE shifts SET
                 shift_leader = ?, safety_ppe = ?, safety_equip = ?,
                 staff_total = ?, staff_present = ?, leave_permitted = ?,
                 leave_permitted_names = ?, leave_unpermitted = ?, leave_unpermitted_names = ?,
-                issues = ?, suggestions = ?, start_time = ?, end_time = ?, created_at = ?
+                issues = ?, suggestions = ?, start_time = ?, end_time = ?, created_at = ?,
+                updated_by_user_id = ?
             WHERE id = ?
             """, (
-                report.shift_leader, int(report.safety_ppe), int(report.safety_equip),
+                shift_leader_name, int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
                 report.leave_permitted_names, report.leave_unpermitted, report.leave_unpermitted_names,
                 report.issues, report.suggestions, report.start_time, report.end_time, now_str,
+                user["id"],
                 shift_id
             ))
-            # Delete old items
             cursor.execute("DELETE FROM packaging_items WHERE shift_id = ?", (shift_id,))
             cursor.execute("DELETE FROM basket_items WHERE shift_id = ?", (shift_id,))
             cursor.execute("DELETE FROM tumbling_items WHERE shift_id = ?", (shift_id,))
@@ -146,19 +293,18 @@ def save_shift_report(report: ShiftReportModel):
                 report_date, shift_num, shift_leader, safety_ppe, safety_equip,
                 staff_total, staff_present, leave_permitted, leave_permitted_names,
                 leave_unpermitted, leave_unpermitted_names, issues, suggestions,
-                start_time, end_time, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                start_time, end_time, created_at, created_by_user_id, updated_by_user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                report.report_date, report.shift_num, report.shift_leader,
+                report.report_date, report.shift_num, shift_leader_name,
                 int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
                 report.leave_permitted_names, report.leave_unpermitted,
                 report.leave_unpermitted_names, report.issues, report.suggestions,
-                report.start_time, report.end_time, now_str
+                report.start_time, report.end_time, now_str, user["id"], user["id"]
             ))
             shift_id = cursor.lastrowid
 
-        # Insert packaging items
         for p in report.packaging:
             if p.product_name or p.customer or p.weight_sorted:
                 cursor.execute("""
@@ -167,7 +313,6 @@ def save_shift_report(report: ShiftReportModel):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (shift_id, p.product_name, p.customer, p.from_val, p.to_val, p.weight_sorted, p.weight_waste, p.notes))
 
-        # Insert baskets
         for b in report.baskets:
             if b.product_name or b.customer or b.basket_count:
                 cursor.execute("""
@@ -176,7 +321,6 @@ def save_shift_report(report: ShiftReportModel):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (shift_id, b.product_name, b.customer, b.from_val, b.to_val, b.steel_grade, b.basket_count, b.total_weight, b.notes))
 
-        # Insert tumbling
         for t in report.tumbling:
             if t.product_name or t.customer or t.m1 or t.m2 or t.total_weight:
                 cursor.execute("""
@@ -187,6 +331,9 @@ def save_shift_report(report: ShiftReportModel):
 
         conn.commit()
         return {"status": "success", "message": f"Báo cáo Ca {report.shift_num} ngày {report.report_date} đã được lưu thành công!", "shift_id": shift_id}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -195,12 +342,18 @@ def save_shift_report(report: ShiftReportModel):
 
 
 @app.get("/api/shifts")
-def get_shifts(date: str = Query(..., description="YYYY-MM-DD")):
+def get_shifts(date: str = Query(..., description="YYYY-MM-DD"), user: dict = Depends(auth.require_user)):
     conn = db.get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM shifts WHERE report_date = ? ORDER BY shift_num", (date,))
+    if user["role"] == "admin":
+        cursor.execute("SELECT * FROM shifts WHERE report_date = ? ORDER BY shift_num", (date,))
+    else:
+        cursor.execute(
+            "SELECT * FROM shifts WHERE report_date = ? AND created_by_user_id = ? ORDER BY shift_num",
+            (date, user["id"])
+        )
     shifts = [dict(row) for row in cursor.fetchall()]
-    
+
     for s in shifts:
         s_id = s["id"]
         cursor.execute("SELECT * FROM packaging_items WHERE shift_id = ?", (s_id,))
@@ -235,11 +388,9 @@ def compute_daily_summary(report_date: str) -> dict:
     shift_ids = [s["id"] for s in shifts]
     submitted_nums = [s["shift_num"] for s in shifts]
 
-    # Attendance aggregation
-    # Sĩ số: thông thường mỗi ca 5 người -> tổng cả ngày 15 người
     total_staff = sum([s["staff_total"] for s in shifts]) or 15
     total_present = sum([s["staff_present"] for s in shifts])
-    
+
     leave_names_list = []
     unpermitted_names_list = []
     for s in shifts:
@@ -251,25 +402,23 @@ def compute_daily_summary(report_date: str) -> dict:
     leave_notes = "Ko" if not leave_names_list else "; ".join(leave_names_list)
     unpermitted = "Ko" if not unpermitted_names_list else "; ".join(unpermitted_names_list)
 
-    # 1. Packaging aggregation: group by (product_name, customer)
     cursor.execute(f"""
-        SELECT product_name, customer, 
-               SUM(weight_sorted) as sum_sorted, 
+        SELECT product_name, customer,
+               SUM(weight_sorted) as sum_sorted,
                SUM(weight_waste) as sum_waste,
                GROUP_CONCAT(notes, '; ') as combined_notes
-        FROM packaging_items 
+        FROM packaging_items
         WHERE shift_id IN ({','.join(['?']*len(shift_ids))})
         GROUP BY product_name, customer
         ORDER BY sum_sorted DESC
     """, shift_ids)
-    
+
     packaging_rows = []
     packaging_notes = []
     for r in cursor.fetchall():
         p_name = r["product_name"] or ""
         c_name = r["customer"] or ""
         notes = r["combined_notes"] or ""
-        # Separate special action notes
         if "nghiệm thu" in notes.lower() or "lò" in notes.lower() or "xếp kho" in notes.lower():
             packaging_notes.append(f" - {notes}")
             item_notes = ""
@@ -284,18 +433,17 @@ def compute_daily_summary(report_date: str) -> dict:
             "notes": item_notes
         })
 
-    # 2. Baskets aggregation: group by (product_name, customer, steel_grade)
     cursor.execute(f"""
         SELECT product_name, customer, steel_grade,
                SUM(basket_count) as sum_baskets,
                SUM(total_weight) as sum_weight,
                GROUP_CONCAT(notes, '; ') as combined_notes
-        FROM basket_items 
+        FROM basket_items
         WHERE shift_id IN ({','.join(['?']*len(shift_ids))})
         GROUP BY product_name, customer, steel_grade
         ORDER BY sum_baskets DESC
     """, shift_ids)
-    
+
     basket_rows = []
     for r in cursor.fetchall():
         b_count = r["sum_baskets"] or 0
@@ -309,13 +457,12 @@ def compute_daily_summary(report_date: str) -> dict:
             "notes": r["combined_notes"] or ""
         })
 
-    # 3. Tumbling aggregation: group by (product_name, customer, notes)
     cursor.execute(f"""
         SELECT product_name, customer, notes,
                SUM(m1) as sum_m1,
                SUM(m2) as sum_m2,
                SUM(total_weight) as sum_weight
-        FROM tumbling_items 
+        FROM tumbling_items
         WHERE shift_id IN ({','.join(['?']*len(shift_ids))})
         GROUP BY product_name, customer, notes
         ORDER BY sum_weight DESC
@@ -332,7 +479,6 @@ def compute_daily_summary(report_date: str) -> dict:
             "notes": r["notes"] or ""
         })
 
-    # 4. Issues aggregation
     issues_list = []
     for s in shifts:
         if s["issues"] and s["issues"].strip() and s["issues"].strip().upper() != "KO":
@@ -341,7 +487,6 @@ def compute_daily_summary(report_date: str) -> dict:
                 clean_l = l.lstrip("-*• ")
                 issues_list.append(f"Ca {s['shift_num']} ({s['shift_leader']}): {clean_l}")
 
-    # 5. Suggestions aggregation
     sugg_list = []
     for s in shifts:
         if s["suggestions"] and s["suggestions"].strip() and s["suggestions"].strip().upper() != "KO":
@@ -373,16 +518,16 @@ def compute_daily_summary(report_date: str) -> dict:
 
 
 @app.get("/api/daily-summary")
-def get_daily_summary(date: str = Query(..., description="YYYY-MM-DD")):
+def get_daily_summary(date: str = Query(..., description="YYYY-MM-DD"), admin: dict = Depends(auth.require_admin)):
     return compute_daily_summary(date)
 
 
 @app.get("/api/export-excel")
-def export_excel_report(date: str = Query(..., description="YYYY-MM-DD")):
+def export_excel_report(date: str = Query(..., description="YYYY-MM-DD"), admin: dict = Depends(auth.require_admin)):
     summary = compute_daily_summary(date)
     if not summary.get("submitted_shifts"):
         raise HTTPException(status_code=400, detail=f"Chưa có ca nào nộp báo cáo trong ngày {date} để xuất file!")
-    
+
     file_path = excel_service.generate_excel_report(summary)
     dt_str = date.replace("-", "")
     return FileResponse(
@@ -393,22 +538,22 @@ def export_excel_report(date: str = Query(..., description="YYYY-MM-DD")):
 
 
 @app.post("/api/sync-to-master")
-def sync_to_master(date: str = Query(..., description="YYYY-MM-DD")):
+def sync_to_master(date: str = Query(..., description="YYYY-MM-DD"), admin: dict = Depends(auth.require_admin)):
     summary = compute_daily_summary(date)
     if not summary.get("submitted_shifts"):
         raise HTTPException(status_code=400, detail=f"Chưa có ca nào nộp báo cáo trong ngày {date}!")
-    
+
     result = excel_service.sync_to_master(summary)
     return result
 
 
 @app.get("/api/history")
-def get_history():
+def get_history(admin: dict = Depends(auth.require_admin)):
     conn = db.get_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT report_date, 
-               COUNT(id) as shift_count, 
+        SELECT report_date,
+               COUNT(id) as shift_count,
                GROUP_CONCAT(shift_num, ',') as shifts,
                GROUP_CONCAT(shift_leader, ', ') as leaders
         FROM shifts
