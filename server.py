@@ -3,8 +3,8 @@ VICO Production Report Management System - FastAPI Backend
 Provides REST APIs for shift report entry, auto-aggregation across shifts, and Excel generation.
 """
 import os
-import sqlite3
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 
@@ -14,12 +14,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import db
 import excel_service
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "vico_production.db")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-app = FastAPI(title="VICO Production Reporting System", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_schema()
+    yield
+
+
+app = FastAPI(title="VICO Production Reporting System", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,86 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS shifts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        report_date TEXT NOT NULL,
-        shift_num INTEGER NOT NULL,
-        shift_leader TEXT NOT NULL,
-        safety_ppe INTEGER DEFAULT 1,
-        safety_equip INTEGER DEFAULT 1,
-        staff_total INTEGER DEFAULT 5,
-        staff_present INTEGER DEFAULT 5,
-        leave_permitted INTEGER DEFAULT 0,
-        leave_permitted_names TEXT,
-        leave_unpermitted INTEGER DEFAULT 0,
-        leave_unpermitted_names TEXT,
-        issues TEXT,
-        suggestions TEXT,
-        start_time TEXT,
-        end_time TEXT,
-        created_at TEXT,
-        UNIQUE(report_date, shift_num)
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS packaging_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        shift_id INTEGER NOT NULL,
-        product_name TEXT,
-        customer TEXT,
-        from_val TEXT,
-        to_val TEXT,
-        weight_sorted REAL,
-        weight_waste REAL,
-        notes TEXT,
-        FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS basket_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        shift_id INTEGER NOT NULL,
-        product_name TEXT,
-        customer TEXT,
-        from_val TEXT,
-        to_val TEXT,
-        steel_grade TEXT,
-        basket_count REAL,
-        total_weight REAL,
-        notes TEXT,
-        FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE
-    )
-    """)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS tumbling_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        shift_id INTEGER NOT NULL,
-        product_name TEXT,
-        customer TEXT,
-        m1 REAL,
-        m2 REAL,
-        total_weight REAL,
-        notes TEXT,
-        FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE
-    )
-    """)
-    conn.commit()
-    conn.close()
-
-
-init_db()
 
 
 # ---------------- MODELS ----------------
@@ -181,7 +108,7 @@ def get_presets():
 
 @app.post("/api/shifts")
 def save_shift_report(report: ShiftReportModel):
-    conn = get_db()
+    conn = db.get_db()
     cursor = conn.cursor()
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -269,7 +196,7 @@ def save_shift_report(report: ShiftReportModel):
 
 @app.get("/api/shifts")
 def get_shifts(date: str = Query(..., description="YYYY-MM-DD")):
-    conn = get_db()
+    conn = db.get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM shifts WHERE report_date = ? ORDER BY shift_num", (date,))
     shifts = [dict(row) for row in cursor.fetchall()]
@@ -287,7 +214,7 @@ def get_shifts(date: str = Query(..., description="YYYY-MM-DD")):
 
 
 def compute_daily_summary(report_date: str) -> dict:
-    conn = get_db()
+    conn = db.get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM shifts WHERE report_date = ? ORDER BY shift_num", (report_date,))
     shifts = [dict(row) for row in cursor.fetchall()]
@@ -477,7 +404,7 @@ def sync_to_master(date: str = Query(..., description="YYYY-MM-DD")):
 
 @app.get("/api/history")
 def get_history():
-    conn = get_db()
+    conn = db.get_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT report_date, 
