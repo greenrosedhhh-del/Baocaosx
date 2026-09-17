@@ -8,8 +8,11 @@ from datetime import datetime
 import openpyxl
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template_report.xlsx")
-MASTER_PATH = os.path.join(os.path.dirname(__file__), "BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx")
-BACKUP_DIR = os.path.join(os.path.dirname(__file__), "backups")
+MASTER_PATH = os.environ.get(
+    "VICO_MASTER_PATH",
+    os.path.join(os.path.dirname(__file__), "BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx"),
+)
+BACKUP_DIR = os.path.join(os.path.dirname(MASTER_PATH), "backups")
 
 
 def set_cell(ws, row: int, col: int, val):

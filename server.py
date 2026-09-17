@@ -549,7 +549,13 @@ def sync_to_master(date: str = Query(..., description="YYYY-MM-DD"), admin: dict
     if not summary.get("submitted_shifts"):
         raise HTTPException(status_code=400, detail=f"Chưa có ca nào nộp báo cáo trong ngày {date}!")
 
-    result = excel_service.sync_to_master(summary)
+    try:
+        result = excel_service.sync_to_master(summary)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail="Không tìm thấy file BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx trên máy chủ. Xem mục 'Lưu ý về file Excel' trong DEPLOY.md.",
+        )
     return result
 
 

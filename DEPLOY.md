@@ -21,6 +21,7 @@ Trong tab "Disks" của service: thêm 1 disk, Mount Path `/var/data`, dung lư�
 | `SECRET_KEY` | chuỗi ngẫu nhiên dài (Render có nút "Generate") |
 | `ENV` | `production` |
 | `VICO_DB_PATH` | `/var/data/vico_production.db` |
+| `VICO_MASTER_PATH` | `/var/data/bao_cao_tong_hop.xlsx` (đường dẫn file Excel tổng hợp gốc trên disk) |
 | `ALLOWED_ORIGINS` | URL thật của service, ví dụ `https://vico-baocao.onrender.com` |
 | `ADMIN_BOOTSTRAP_USERNAME` | tên đăng nhập admin đầu tiên bạn muốn dùng |
 | `ADMIN_BOOTSTRAP_PASSWORD` | mật khẩu admin đầu tiên (đổi ngay sau khi đăng nhập lần đầu qua tab Quản Lý Tài Khoản) |
@@ -34,4 +35,10 @@ Trong tab "Disks" của service: thêm 1 disk, Mount Path `/var/data`, dung lư�
 ## 6. Kiểm tra sau deploy
 - Đăng nhập ca trưởng → nộp thử 1 báo cáo ca → xác nhận dữ liệu hiện đúng.
 - Trigger 1 lần "Manual Deploy" trên Render → xác nhận dữ liệu vừa nộp **không bị mất** (nhờ persistent disk).
-- Đăng nhập admin → xem tab Tổng hợp, tải Excel thử, đồng bộ vào file gốc thử.
+- Đăng nhập admin → xem tab Tổng hợp, tải Excel ngày thử. (Chỉ thử "Đồng bộ vào file gốc" nếu đã đưa file gốc lên disk — xem mục 7.)
+
+## 7. Lưu ý về file Excel
+- Nút "Tải File Excel Báo Cáo Ngày" hoạt động bình thường trên Render (file tạo tạm rồi tải về máy).
+- Nút "Đồng bộ vào file tổng hợp gốc" cần file Excel tổng hợp gốc nằm trên disk tại đường dẫn `VICO_MASTER_PATH`. Nếu chưa đưa file lên, nút này báo lỗi rõ ràng; các chức năng khác vẫn chạy bình thường. Muốn dùng thì phải chép file gốc lên disk (ví dụ qua SSH của Render — xem tài liệu SSH của Render), đặt đúng tên theo `VICO_MASTER_PATH`.
+- Mỗi lần đồng bộ, hệ thống sao lưu 1 bản file gốc vào `/var/data/backups/` (file gốc khoảng vài MB), nên cần dọn định kỳ để không đầy disk 1GB.
+- Hiện chưa có nút tải file tổng hợp gốc từ server về máy — khi chạy online, nên dùng "Tải File Excel Báo Cáo Ngày" hằng ngày.
