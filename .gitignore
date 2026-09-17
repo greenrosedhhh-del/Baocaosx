@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+exports/
+backups/
+temp_day_report.xlsx
+test_out.xlsx
+BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx
+.env
