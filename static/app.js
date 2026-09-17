@@ -1,6 +1,20 @@
 // VICO Production Reporting System - Frontend Logic
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // --- AUTH GUARD ---
+  let currentUser = null;
+  try {
+    const meRes = await fetch('/api/auth/me');
+    if (!meRes.ok) {
+      window.location.href = 'login.html';
+      return;
+    }
+    currentUser = await meRes.json();
+  } catch (e) {
+    window.location.href = 'login.html';
+    return;
+  }
+
   // Elements
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
@@ -36,6 +50,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   reportDateInput.value = today;
   summaryDateInput.value = today;
   currentDateDisplay.textContent = `Hôm nay: ${formatDateDisplay(today)}`;
+
+  // --- APPLY CURRENT USER TO UI ---
+  shiftLeaderInput.value = currentUser.full_name;
+
+  const userStatusBox = document.getElementById('userStatusBox');
+  const currentUserName = document.getElementById('currentUserName');
+  const btnLogout = document.getElementById('btnLogout');
+  userStatusBox.style.display = 'flex';
+  currentUserName.textContent = `${currentUser.full_name} (${currentUser.role === 'admin' ? 'Admin' : 'Ca trưởng'})`;
+  btnLogout.addEventListener('click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = 'login.html';
+  });
+
+  const btnTabSummaryEl = document.getElementById('btnTabSummary');
+  const btnTabHistoryEl = document.getElementById('btnTabHistory');
+  const btnTabAdmin = document.getElementById('btnTabAdmin');
+  if (currentUser.role !== 'admin') {
+    btnTabSummaryEl.style.display = 'none';
+    btnTabHistoryEl.style.display = 'none';
+  } else {
+    btnTabAdmin.style.display = 'flex';
+  }
 
   let presets = {
     leaders: ["Trọng", "Hải", "Tân", "Quang"],
@@ -235,10 +272,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const reportDate = reportDateInput.value;
     const shiftNum = parseInt(shiftNumSelect.value, 10);
-    const shiftLeader = shiftLeaderInput.value.trim();
 
-    if (!reportDate || !shiftLeader) {
-      showToast("Vui lòng điền đầy đủ ngày báo cáo và tên trưởng ca!");
+    if (!reportDate) {
+      showToast("Vui lòng chọn ngày báo cáo!");
       return;
     }
 
@@ -306,7 +342,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const payload = {
       report_date: reportDate,
       shift_num: shiftNum,
-      shift_leader: shiftLeader,
       safety_ppe: document.getElementById('safetyPpe').checked,
       safety_equip: document.getElementById('safetyEquip').checked,
       staff_total: parseInt(document.getElementById('staffTotal').value, 10) || 5,
