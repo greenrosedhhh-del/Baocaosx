@@ -221,19 +221,22 @@ def test_submitted_shifts_fill_the_ca_line(tmp_path):
 
 
 def test_safety_checkboxes_are_ticked_when_no_shift_failed(tmp_path):
-    ws = _sheet(tmp_path, _summary(safety={"ppe_failed_shifts": [], "equip_failed_shifts": []}))
+    ws = _sheet(tmp_path, _summary(safety={"production_failed_shifts": [], "ppe_failed_shifts": [], "equip_failed_shifts": []}))
+    assert ws["A7"].value == "☑ Điều kiện sản xuất"
     assert ws["D7"].value == "☑ Bảo hộ đầy đủ"
     assert ws["J7"].value == "☑ Thiết bị an toàn"
 
 
 def test_safety_checkboxes_name_the_failed_shifts(tmp_path):
-    ws = _sheet(tmp_path, _summary(safety={"ppe_failed_shifts": [2], "equip_failed_shifts": [1, 3]}))
+    ws = _sheet(tmp_path, _summary(safety={"production_failed_shifts": [1], "ppe_failed_shifts": [2], "equip_failed_shifts": [1, 3]}))
+    assert ws["A7"].value == "☐ Điều kiện sản xuất (Ca 1: không đạt)"
     assert ws["D7"].value == "☐ Bảo hộ đầy đủ (Ca 2: không đạt)"
     assert ws["J7"].value == "☐ Thiết bị an toàn (Ca 1, 3: không đạt)"
 
 
 def test_missing_safety_info_keeps_template_text(tmp_path):
     ws = _sheet(tmp_path, _summary())
+    assert ws["A7"].value == "□ Điều kiện sản xuất"
     assert ws["D7"].value == "□ Bảo hộ đầy đủ"
     assert ws["J7"].value == "□ Thiết bị an toàn"
 

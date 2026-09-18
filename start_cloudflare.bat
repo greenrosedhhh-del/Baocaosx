@@ -14,5 +14,5 @@ echo.
 echo ===================================================
 echo.
 cd /d "%~dp0"
-cloudflared.exe tunnel --url http://localhost:8088
+cloudflared.exe tunnel --url http://127.0.0.1:8088
 pause

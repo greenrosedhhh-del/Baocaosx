@@ -573,6 +573,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function collectDraft() {
     const draft = {
       saved_at: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      safety_production: document.getElementById('safetyProduction').checked,
       safety_ppe: document.getElementById('safetyPpe').checked,
       safety_equip: document.getElementById('safetyEquip').checked,
       start_time: startTimeInput.value,
@@ -707,6 +708,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- POPULATE FORM WITH SHIFT / DRAFT DATA ---
   function populateFormWithShiftData(data) {
+    if (data.safety_production !== undefined) {
+      document.getElementById('safetyProduction').checked = !!data.safety_production;
+    }
     if (data.safety_ppe !== undefined) {
       document.getElementById('safetyPpe').checked = !!data.safety_ppe;
     }
@@ -1417,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const payload = {
       report_date: reportDate,
       shift_num: shiftNum,
+      safety_production: document.getElementById('safetyProduction').checked,
       safety_ppe: document.getElementById('safetyPpe').checked,
       safety_equip: document.getElementById('safetyEquip').checked,
       staff_total: staffTotal,

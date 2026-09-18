@@ -339,6 +339,7 @@ class TumblingItemModel(BaseModel):
 class ShiftReportModel(BaseModel):
     report_date: str
     shift_num: Annotated[int, Ge(1), Le(3)]
+    safety_production: bool = True
     safety_ppe: bool = True
     safety_equip: bool = True
     staff_total: StaffNum = 5
@@ -650,14 +651,14 @@ def save_shift_report(report: ShiftReportModel, user: dict = Depends(auth.requir
             # Giữ nguyên người nộp (shift_leader) và thời điểm nộp gốc (created_at)
             cursor.execute("""
             UPDATE shifts SET
-                safety_ppe = ?, safety_equip = ?,
+                safety_production = ?, safety_ppe = ?, safety_equip = ?,
                 staff_total = ?, staff_present = ?, leave_permitted = ?,
                 leave_permitted_names = ?, leave_unpermitted = ?, leave_unpermitted_names = ?,
                 issues = ?, suggestions = ?, start_time = ?, end_time = ?,
                 updated_at = ?, updated_by_user_id = ?
             WHERE id = ?
             """, (
-                int(report.safety_ppe), int(report.safety_equip),
+                int(report.safety_production), int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
                 report.leave_permitted_names, report.leave_unpermitted, report.leave_unpermitted_names,
                 report.issues, report.suggestions, report.start_time, report.end_time,
@@ -673,14 +674,14 @@ def save_shift_report(report: ShiftReportModel, user: dict = Depends(auth.requir
                 raise HTTPException(status_code=409, detail=SHIFT_MISSING_CONFLICT)
             cursor.execute("""
             INSERT INTO shifts (
-                report_date, shift_num, shift_leader, safety_ppe, safety_equip,
+                report_date, shift_num, shift_leader, safety_production, safety_ppe, safety_equip,
                 staff_total, staff_present, leave_permitted, leave_permitted_names,
                 leave_unpermitted, leave_unpermitted_names, issues, suggestions,
                 start_time, end_time, created_at, created_by_user_id, updated_by_user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 report.report_date, report.shift_num, user["full_name"],
-                int(report.safety_ppe), int(report.safety_equip),
+                int(report.safety_production), int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
                 report.leave_permitted_names, report.leave_unpermitted,
                 report.leave_unpermitted_names, report.issues, report.suggestions,
@@ -887,7 +888,7 @@ def is_packaging_general_note(notes: str) -> bool:
 
 
 def _empty_safety() -> dict:
-    return {"ppe_failed_shifts": [], "equip_failed_shifts": []}
+    return {"production_failed_shifts": [], "ppe_failed_shifts": [], "equip_failed_shifts": []}
 
 
 def compute_daily_summary(report_date: str) -> dict:
@@ -929,6 +930,7 @@ def compute_daily_summary(report_date: str) -> dict:
     unpermitted = "Ko" if not unpermitted_names_list else "; ".join(unpermitted_names_list)
 
     safety = {
+        "production_failed_shifts": [s["shift_num"] for s in shifts if s.get("safety_production") is not None and not s["safety_production"]],
         "ppe_failed_shifts": [s["shift_num"] for s in shifts if s["safety_ppe"] is not None and not s["safety_ppe"]],
         "equip_failed_shifts": [s["shift_num"] for s in shifts if s["safety_equip"] is not None and not s["safety_equip"]],
     }

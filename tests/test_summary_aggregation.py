@@ -106,14 +106,26 @@ def test_history_is_limited_to_30_latest_dates(client):
 
 def test_summary_reports_safety_failures_per_shift(client):
     login_admin(client)
-    _post(client, 1, safety_ppe=False)
+    _post(client, 1, safety_production=False, safety_ppe=False)
     _post(client, 2, safety_equip=False)
     _post(client, 3)
-    assert _summary(client)["safety"] == {"ppe_failed_shifts": [1], "equip_failed_shifts": [2]}
+    assert _summary(client)["safety"] == {
+        "production_failed_shifts": [1],
+        "ppe_failed_shifts": [1],
+        "equip_failed_shifts": [2],
+    }
 
 
 def test_summary_safety_key_present_when_all_ok_and_for_empty_day(client):
     login_admin(client)
     _post(client, 1)
-    assert _summary(client)["safety"] == {"ppe_failed_shifts": [], "equip_failed_shifts": []}
-    assert _summary(client, "2026-01-01")["safety"] == {"ppe_failed_shifts": [], "equip_failed_shifts": []}
+    assert _summary(client)["safety"] == {
+        "production_failed_shifts": [],
+        "ppe_failed_shifts": [],
+        "equip_failed_shifts": [],
+    }
+    assert _summary(client, "2026-01-01")["safety"] == {
+        "production_failed_shifts": [],
+        "ppe_failed_shifts": [],
+        "equip_failed_shifts": [],
+    }

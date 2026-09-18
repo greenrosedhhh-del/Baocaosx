@@ -124,7 +124,7 @@ test('draftHasContent counts attendance changes and leave names', () => {
   const blank = {
     packaging: [], baskets: [], tumbling: [], issues: '', suggestions: '',
     staff_total: '5', staff_present: '5', leave_permitted: '0', leave_permitted_names: '',
-    leave_unpermitted: '0', leave_unpermitted_names: '', safety_ppe: true, safety_equip: true
+    leave_unpermitted: '0', leave_unpermitted_names: '', safety_production: true, safety_ppe: true, safety_equip: true
   };
   assert.equal(U.draftHasContent(blank), false);
   assert.equal(U.draftHasContent({ ...blank, staff_total: '' }), false);
@@ -135,6 +135,7 @@ test('draftHasContent counts attendance changes and leave names', () => {
   assert.equal(U.draftHasContent({ ...blank, leave_permitted_names: 'Hợi' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_unpermitted_names: '  Đồng ' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_unpermitted_names: '   ' }), false);
+  assert.equal(U.draftHasContent({ ...blank, safety_production: false }), true);
   assert.equal(U.draftHasContent({ ...blank, safety_ppe: false }), true);
   assert.equal(U.draftHasContent({ ...blank, safety_equip: false }), true);
 });

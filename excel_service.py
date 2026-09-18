@@ -216,6 +216,8 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
         set_cell(ws, 6, 1, "Ca: " + ", ".join(str(s) for s in submitted_shifts))
     safety = summary_data.get("safety")
     if isinstance(safety, dict):
+        if safety.get("production_failed_shifts") is not None:
+            set_cell(ws, 7, 1, _checkbox_text("Điều kiện sản xuất", safety["production_failed_shifts"]))
         if safety.get("ppe_failed_shifts") is not None:
             set_cell(ws, 7, 4, _checkbox_text("Bảo hộ đầy đủ", safety["ppe_failed_shifts"]))
         if safety.get("equip_failed_shifts") is not None:

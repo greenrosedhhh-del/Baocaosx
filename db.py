@@ -49,6 +49,7 @@ def init_schema() -> None:
         report_date TEXT NOT NULL,
         shift_num INTEGER NOT NULL,
         shift_leader TEXT NOT NULL,
+        safety_production INTEGER DEFAULT 1,
         safety_ppe INTEGER DEFAULT 1,
         safety_equip INTEGER DEFAULT 1,
         staff_total INTEGER DEFAULT 5,
@@ -65,6 +66,8 @@ def init_schema() -> None:
         UNIQUE(report_date, shift_num)
     )
     """)
+    if not _table_has_column(cursor, "shifts", "safety_production"):
+        cursor.execute("ALTER TABLE shifts ADD COLUMN safety_production INTEGER DEFAULT 1")
     if not _table_has_column(cursor, "shifts", "created_by_user_id"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN created_by_user_id INTEGER")
     if not _table_has_column(cursor, "shifts", "updated_by_user_id"):

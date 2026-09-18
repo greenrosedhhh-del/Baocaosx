@@ -66,7 +66,7 @@
     const attendance = Object.keys(ATTENDANCE_DEFAULTS).some(key =>
       draft[key] !== undefined && parseIntOr(draft[key], ATTENDANCE_DEFAULTS[key]) !== ATTENDANCE_DEFAULTS[key]);
     const names = String(draft.leave_permitted_names || '').trim() || String(draft.leave_unpermitted_names || '').trim();
-    const safety = draft.safety_ppe === false || draft.safety_equip === false;
+    const safety = draft.safety_production === false || draft.safety_ppe === false || draft.safety_equip === false;
     return packaging || baskets || tumbling || Boolean(texts) || attendance || Boolean(names) || safety;
   }
 
