@@ -32,9 +32,16 @@ def init_schema() -> None:
         full_name TEXT NOT NULL,
         role TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        must_change_password INTEGER NOT NULL DEFAULT 1
     )
     """)
+    if not _table_has_column(cursor, "users", "must_change_password"):
+        # Tài khoản cũ dùng mật khẩu mặc định đã bị công khai -> bắt buộc đổi 1 lần
+        cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 1")
+    if not _table_has_column(cursor, "users", "session_version"):
+        # Tăng số này để thu hồi mọi phiên đăng nhập của tài khoản (đăng xuất, đổi mật khẩu, khóa...)
+        cursor.execute("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS shifts (
@@ -62,6 +69,8 @@ def init_schema() -> None:
         cursor.execute("ALTER TABLE shifts ADD COLUMN created_by_user_id INTEGER")
     if not _table_has_column(cursor, "shifts", "updated_by_user_id"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN updated_by_user_id INTEGER")
+    if not _table_has_column(cursor, "shifts", "updated_at"):
+        cursor.execute("ALTER TABLE shifts ADD COLUMN updated_at TEXT")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS packaging_items (

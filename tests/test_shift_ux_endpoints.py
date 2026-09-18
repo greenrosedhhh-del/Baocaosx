@@ -1,14 +1,12 @@
+from helpers import create_active_user
+
+
 def _login_admin(client):
     client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
 
 
 def _create_leader(client, username, full_name, password="leader123"):
-    _login_admin(client)
-    resp = client.post("/api/admin/users", json={
-        "username": username, "full_name": full_name, "password": password, "role": "leader"
-    })
-    assert resp.status_code == 200
-    client.post("/api/auth/logout")
+    return create_active_user(client, username, full_name, password)
 
 
 def _login(client, username, password="leader123"):
@@ -17,7 +15,7 @@ def _login(client, username, password="leader123"):
 
 
 SAMPLE_SHIFT = {
-    "report_date": "2026-09-20",
+    "report_date": "2026-09-16",
     "shift_num": 1,
     "safety_ppe": True,
     "safety_equip": True,
@@ -55,7 +53,7 @@ def test_check_status_owner_and_other_leader(client):
     assert submit_res.status_code == 200
 
     # Hai checks status -> can_edit is True, shift_data is present
-    res1 = client.get("/api/shifts/check-status?date=2026-09-20&shift_num=1")
+    res1 = client.get("/api/shifts/check-status?date=2026-09-16&shift_num=1")
     assert res1.status_code == 200
     data1 = res1.json()
     assert data1["exists"] is True
@@ -65,7 +63,7 @@ def test_check_status_owner_and_other_leader(client):
 
     # Trong checks status -> can_edit is False, shift_data is None
     _login(client, "trong")
-    res2 = client.get("/api/shifts/check-status?date=2026-09-20&shift_num=1")
+    res2 = client.get("/api/shifts/check-status?date=2026-09-16&shift_num=1")
     assert res2.status_code == 200
     data2 = res2.json()
     assert data2["exists"] is True
@@ -74,7 +72,7 @@ def test_check_status_owner_and_other_leader(client):
 
     # Admin checks status -> can_edit is True, shift_data is present
     _login_admin(client)
-    res_admin = client.get("/api/shifts/check-status?date=2026-09-20&shift_num=1")
+    res_admin = client.get("/api/shifts/check-status?date=2026-09-16&shift_num=1")
     assert res_admin.status_code == 200
     data_admin = res_admin.json()
     assert data_admin["exists"] is True

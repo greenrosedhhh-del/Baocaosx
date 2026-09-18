@@ -12,3 +12,6 @@ cloudflared.exe
 *.log
 
 .worktrees/
+.secret_key
+*.tmp
+node_modules/

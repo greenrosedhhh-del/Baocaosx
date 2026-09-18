@@ -6,3 +6,17 @@ tests
 .git
 .idea
 .vscode
+.claude
+.worktrees
+docs
+.env
+.secret_key
+*.db
+*.tmp
+*.bat
+cloudflared.exe
+exports
+backups
+BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx
+temp_day_report.xlsx
+test_out.xlsx

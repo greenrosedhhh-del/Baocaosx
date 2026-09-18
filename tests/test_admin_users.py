@@ -1,3 +1,6 @@
+from helpers import create_active_user
+
+
 def _login_admin(client):
     resp = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
     assert resp.status_code == 200
@@ -48,11 +51,7 @@ def test_admin_can_deactivate_user_and_blocks_their_login(client):
 
 
 def test_leader_account_cannot_manage_users(client):
-    _login_admin(client)
-    client.post("/api/admin/users", json={
-        "username": "quang", "full_name": "Quang", "password": "leader123", "role": "leader"
-    })
-    client.post("/api/auth/logout")
+    create_active_user(client, "quang", "Quang")
     client.post("/api/auth/login", json={"username": "quang", "password": "leader123"})
 
     resp = client.get("/api/admin/users")
@@ -68,11 +67,7 @@ def test_create_user_rejects_invalid_role(client):
 
 
 def test_leader_cannot_create_or_update_users(client):
-    _login_admin(client)
-    client.post("/api/admin/users", json={
-        "username": "quang2", "full_name": "Quang2", "password": "leader123", "role": "leader"
-    })
-    client.post("/api/auth/logout")
+    create_active_user(client, "quang2", "Quang2")
     client.post("/api/auth/login", json={"username": "quang2", "password": "leader123"})
 
     resp = client.post("/api/admin/users", json={

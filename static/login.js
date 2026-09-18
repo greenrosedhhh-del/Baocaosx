@@ -1,3 +1,5 @@
+const { parseJsonOrNull, friendlyHttpError } = window.VicoUtils;
+
 document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('loginForm');
   const errorBox = document.getElementById('loginError');
@@ -36,11 +38,17 @@ document.addEventListener('DOMContentLoaded', () => {
       btnSubmit.disabled = true;
       btnSubmitText.textContent = 'ĐANG ĐĂNG NHẬP...';
 
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+      let res;
+      try {
+        res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+      } catch (err) {
+        showError(friendlyHttpError(0, null));
+        return;
+      }
 
       if (res.ok) {
         btnSubmitText.textContent = '✓ THÀNH CÔNG!';
@@ -48,11 +56,15 @@ document.addEventListener('DOMContentLoaded', () => {
           window.location.href = 'index.html';
         }, 300);
       } else {
-        const data = await res.json();
-        showError(data.detail || 'Sai tên đăng nhập hoặc mật khẩu!');
+        // Proxy/máy chủ lỗi có thể trả về trang HTML thay vì JSON
+        let data = null;
+        try {
+          data = parseJsonOrNull(await res.text());
+        } catch (err) {
+          data = null;
+        }
+        showError(res.status === 401 && !data ? 'Sai tên đăng nhập hoặc mật khẩu!' : friendlyHttpError(res.status, data));
       }
-    } catch (err) {
-      showError('Lỗi kết nối máy chủ: ' + err.message);
     } finally {
       if (btnSubmitText.textContent !== '✓ THÀNH CÔNG!') {
         btnSubmit.disabled = false;

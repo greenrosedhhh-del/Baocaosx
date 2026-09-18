@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-body">
@@ -39,7 +40,7 @@
           <label for="loginUsername">Tên đăng nhập</label>
           <div class="input-with-icon">
             <span class="input-icon">👤</span>
-            <input type="text" id="loginUsername" placeholder="Nhập tên đăng nhập" required autofocus autocomplete="username">
+            <input type="text" id="loginUsername" placeholder="Nhập tên đăng nhập" required autofocus autocomplete="username" maxlength="64">
           </div>
         </div>
 
@@ -47,7 +48,7 @@
           <label for="loginPassword">Mật khẩu</label>
           <div class="input-with-icon">
             <span class="input-icon">🔒</span>
-            <input type="password" id="loginPassword" placeholder="Nhập mật khẩu" required autocomplete="current-password">
+            <input type="password" id="loginPassword" placeholder="Nhập mật khẩu" required autocomplete="current-password" maxlength="128">
             <button type="button" id="btnTogglePassword" class="btn-toggle-pw" title="Hiện/ẩn mật khẩu">
               <span id="pwToggleIcon">👁️</span>
             </button>
@@ -68,7 +69,7 @@
       <div class="login-card-footer">
         <div class="footer-status">
           <span class="server-status-dot"></span>
-          <span>Máy chủ trực tuyến • Cổng 8088</span>
+          <span>Máy chủ trực tuyến</span>
         </div>
         <div class="footer-copyright">
           © 2026 VICO PX NLLT • Lưu trữ & Bảo mật nội bộ
@@ -78,6 +79,7 @@
     </div>
   </div>
 
+  <script src="utils.js"></script>
   <script src="login.js"></script>
 </body>
 </html>

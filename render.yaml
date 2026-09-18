@@ -1,10 +1,16 @@
 services:
   - type: web
     name: vico-baocao-nllt
-    env: python
-    plan: free
+    runtime: python
+    # Gói Free KHÔNG gắn được ổ đĩa lưu trữ: database bị xóa sau mỗi lần deploy/khởi động lại.
+    # Gói Starter (có phí) + disk bên dưới để dữ liệu báo cáo được giữ lại.
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: vico-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -12,3 +18,14 @@ services:
         generateValue: true
       - key: ENV
         value: production
+      - key: TZ
+        value: Asia/Ho_Chi_Minh
+      - key: VICO_DB_PATH
+        value: /var/data/vico_production.db
+      - key: VICO_MASTER_PATH
+        value: /var/data/bao_cao_tong_hop.xlsx
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        value: admin
+      # Render sẽ hỏi giá trị khi tạo service. Để trống thì hệ thống tự sinh mật khẩu tạm và in ra log.
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false

@@ -1,14 +1,12 @@
+from helpers import create_active_user
+
+
 def _login_admin(client):
     client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
 
 
 def _create_leader(client, username, full_name, password="leader123"):
-    _login_admin(client)
-    resp = client.post("/api/admin/users", json={
-        "username": username, "full_name": full_name, "password": password, "role": "leader"
-    })
-    assert resp.status_code == 200
-    client.post("/api/auth/logout")
+    return create_active_user(client, username, full_name, password)
 
 
 def _login(client, username, password="leader123"):
@@ -103,6 +101,7 @@ def test_leader_cannot_access_daily_summary(client):
     _login(client, "tan")
     resp = client.get("/api/daily-summary", params={"date": "2026-09-17"})
     assert resp.status_code == 403
+    assert resp.json()["detail"] == "Chỉ admin mới có quyền truy cập"
 
 
 def test_admin_can_access_daily_summary(client):
