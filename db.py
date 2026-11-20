@@ -1,6 +1,7 @@
 """Database connection and schema management for the VICO reporting system."""
 import os
 import sqlite3
+from datetime import datetime
 
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "vico_production.db")
 
@@ -56,6 +57,8 @@ def init_schema() -> None:
         staff_present INTEGER DEFAULT 5,
         leave_permitted INTEGER DEFAULT 0,
         leave_permitted_names TEXT,
+        leave_rotating INTEGER DEFAULT 0,
+        leave_rotating_names TEXT,
         leave_unpermitted INTEGER DEFAULT 0,
         leave_unpermitted_names TEXT,
         issues TEXT,
@@ -68,12 +71,18 @@ def init_schema() -> None:
     """)
     if not _table_has_column(cursor, "shifts", "safety_production"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN safety_production INTEGER DEFAULT 1")
+    if not _table_has_column(cursor, "shifts", "leave_rotating"):
+        cursor.execute("ALTER TABLE shifts ADD COLUMN leave_rotating INTEGER DEFAULT 0")
+    if not _table_has_column(cursor, "shifts", "leave_rotating_names"):
+        cursor.execute("ALTER TABLE shifts ADD COLUMN leave_rotating_names TEXT")
     if not _table_has_column(cursor, "shifts", "created_by_user_id"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN created_by_user_id INTEGER")
     if not _table_has_column(cursor, "shifts", "updated_by_user_id"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN updated_by_user_id INTEGER")
     if not _table_has_column(cursor, "shifts", "updated_at"):
         cursor.execute("ALTER TABLE shifts ADD COLUMN updated_at TEXT")
+    if not _table_has_column(cursor, "shifts", "shift_tasks"):
+        cursor.execute("ALTER TABLE shifts ADD COLUMN shift_tasks TEXT")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS packaging_items (
@@ -117,6 +126,41 @@ def init_schema() -> None:
         FOREIGN KEY(shift_id) REFERENCES shifts(id) ON DELETE CASCADE
     )
     """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS presets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        UNIQUE(category, name)
+    )
+    """)
+
+    # Seed default presets if empty
+    cursor.execute("SELECT COUNT(*) as c FROM presets")
+    if cursor.fetchone()["c"] == 0:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        defaults = [
+            ("product", "D25", 1),
+            ("product", "D40", 2),
+            ("product", "D60", 3),
+            ("product", "D80", 4),
+            ("customer", "Molycop", 1),
+            ("customer", "Nhập TQ", 2),
+            ("customer", "Khô dầu", 3),
+            ("customer", "VICO", 4),
+            ("steel_grade", "CR18", 1),
+            ("steel_grade", "18", 2),
+            ("steel_grade", "CR20", 3),
+            ("steel_grade", "B2", 4),
+        ]
+        cursor.executemany(
+            "INSERT INTO presets (category, name, sort_order, active, created_at) VALUES (?, ?, ?, 1, ?)",
+            [(cat, name, order, now) for cat, name, order in defaults],
+        )
 
     conn.commit()
     conn.close()

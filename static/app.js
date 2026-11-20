@@ -57,6 +57,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const staffTotalInput = document.getElementById('staffTotal');
   const staffPresentInput = document.getElementById('staffPresent');
   const leavePermittedInput = document.getElementById('leavePermitted');
+  const leaveRotatingInput = document.getElementById('leaveRotating');
+  const leaveRotatingNamesInput = document.getElementById('leaveRotatingNames');
   const leaveUnpermittedInput = document.getElementById('leaveUnpermitted');
 
   const containerPackaging = document.getElementById('containerPackaging');
@@ -416,15 +418,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // Fetch presets from API
-  try {
-    const res = await fetch('/api/presets');
-    if (res.ok) {
-      presets = await res.json();
+  function populateDatalists(data) {
+    const pList = document.getElementById('presetProducts');
+    const cList = document.getElementById('presetCustomers');
+    const sList = document.getElementById('presetSteelGrades');
+    if (pList && data && data.products) {
+      pList.innerHTML = data.products.map(p => `<option value="${escapeHtml(p)}">`).join('');
     }
-  } catch (e) {
-    console.warn("Could not load presets from server, using defaults", e);
+    if (cList && data && data.customers) {
+      cList.innerHTML = data.customers.map(c => `<option value="${escapeHtml(c)}">`).join('');
+    }
+    if (sList && data && data.steel_grades) {
+      sList.innerHTML = data.steel_grades.map(s => `<option value="${escapeHtml(s)}">`).join('');
+    }
   }
+
+  // Fetch presets from API
+  async function loadUserPresets() {
+    try {
+      const res = await fetch('/api/presets');
+      if (res.ok) {
+        presets = await res.json();
+        populateDatalists(presets);
+      }
+    } catch (e) {
+      console.warn("Could not load presets from server, using defaults", e);
+    }
+  }
+  await loadUserPresets();
 
   // Set default hours for Ca 1
   updateShiftHours();
@@ -443,8 +464,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadSummary();
       } else if (targetId === 'history-tab') {
         loadHistory();
+        initAndLoadAnalytics();
       } else if (targetId === 'admin-tab') {
         loadUsers();
+        loadAdminPresets();
       }
     });
   });
@@ -582,10 +605,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       staff_present: staffPresentInput.value,
       leave_permitted: leavePermittedInput.value,
       leave_permitted_names: document.getElementById('leavePermittedNames').value,
+      leave_rotating: leaveRotatingInput.value,
+      leave_rotating_names: leaveRotatingNamesInput.value,
       leave_unpermitted: leaveUnpermittedInput.value,
       leave_unpermitted_names: document.getElementById('leaveUnpermittedNames').value,
       issues: document.getElementById('shiftIssues').value,
       suggestions: document.getElementById('shiftSuggestions').value,
+      shift_tasks: document.getElementById('shiftTasks').value,
       packaging: [],
       baskets: [],
       tumbling: []
@@ -607,6 +633,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         customer: card.querySelector('.bsk-customer').value,
         steel_grade: card.querySelector('.bsk-steel').value,
         basket_count: card.querySelector('.bsk-count').value,
+        basket_from: card.querySelector('.bsk-from').value,
+        basket_to: card.querySelector('.bsk-to').value,
         total_weight: card.querySelector('.bsk-weight').value,
         notes: card.querySelector('.bsk-notes').value
       });
@@ -724,10 +752,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       staffPresent: 'staff_present',
       leavePermitted: 'leave_permitted',
       leavePermittedNames: 'leave_permitted_names',
+      leaveRotating: 'leave_rotating',
+      leaveRotatingNames: 'leave_rotating_names',
       leaveUnpermitted: 'leave_unpermitted',
       leaveUnpermittedNames: 'leave_unpermitted_names',
       shiftIssues: 'issues',
-      shiftSuggestions: 'suggestions'
+      shiftSuggestions: 'suggestions',
+      shiftTasks: 'shift_tasks'
     };
     Object.keys(fieldMap).forEach(id => {
       const value = data[fieldMap[id]];
@@ -786,18 +817,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       staffTotal,
       staffPresent: parseIntOr(staffPresentInput.value, staffTotal),
       leavePermitted: parseIntOr(leavePermittedInput.value, 0),
+      leaveRotating: parseIntOr(leaveRotatingInput.value, 0),
       leaveUnpermitted: parseIntOr(leaveUnpermittedInput.value, 0)
     };
     const maxValue = String(Math.max(0, Math.min(staffTotal, 1000)));
     staffPresentInput.max = maxValue;
     leavePermittedInput.max = maxValue;
+    leaveRotatingInput.max = maxValue;
     leaveUnpermittedInput.max = maxValue;
     const problem = attendanceProblem(values);
     staffPresentInput.setCustomValidity(problem && problem.field === 'staffPresent' ? problem.message : '');
     leavePermittedInput.setCustomValidity(problem && problem.field === 'leavePermitted' ? problem.message : '');
+    leaveRotatingInput.setCustomValidity(problem && problem.field === 'leaveRotating' ? problem.message : '');
   }
 
-  [staffTotalInput, staffPresentInput, leavePermittedInput, leaveUnpermittedInput].forEach(input => {
+  [staffTotalInput, staffPresentInput, leavePermittedInput, leaveRotatingInput, leaveUnpermittedInput].forEach(input => {
     input.addEventListener('input', updateAttendanceValidity);
   });
 
@@ -1014,11 +1048,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="grid grid-2">
           <div class="form-group">
             <label>Tên Sản Phẩm <span class="req">*</span></label>
-            <input type="text" class="pkg-product input-lg" value="${escapeHtml(data.product_name || 'D25')}" list="prodList" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
+            <input type="text" class="pkg-product input-lg" list="presetProducts" value="${escapeHtml(data.product_name || (presets.products && presets.products[0]) || 'D25')}" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
           </div>
           <div class="form-group">
             <label>Khách Hàng <span class="req">*</span></label>
-            <input type="text" class="pkg-customer input-lg" value="${escapeHtml(data.customer || 'Molycop')}" list="custList" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
+            <input type="text" class="pkg-customer input-lg" list="presetCustomers" value="${escapeHtml(data.customer || (presets.customers && presets.customers[0]) || 'Molycop')}" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
           </div>
         </div>
 
@@ -1089,22 +1123,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="grid grid-2">
           <div class="form-group">
             <label>Tên Sản Phẩm <span class="req">*</span></label>
-            <input type="text" class="bsk-product input-lg" value="${escapeHtml(data.product_name || 'D25')}" list="prodList" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
+            <input type="text" class="bsk-product input-lg" list="presetProducts" value="${escapeHtml(data.product_name || (presets.products && presets.products[0]) || 'D25')}" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
           </div>
           <div class="form-group">
             <label>Khách Hàng <span class="req">*</span></label>
-            <input type="text" class="bsk-customer input-lg" value="${escapeHtml(data.customer || 'Molycop')}" list="custList" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
+            <input type="text" class="bsk-customer input-lg" list="presetCustomers" value="${escapeHtml(data.customer || (presets.customers && presets.customers[0]) || 'Molycop')}" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
           </div>
         </div>
 
         <div class="grid grid-2 mt-2">
           <div class="form-group">
             <label>Mác Thép</label>
-            <input type="text" class="bsk-steel input-lg" value="${escapeHtml(data.steel_grade || 'CR18')}" list="steelList" placeholder="VD: CR18" maxlength="100" enterkeyhint="next">
+            <input type="text" class="bsk-steel input-lg" list="presetSteelGrades" value="${escapeHtml(data.steel_grade || (presets.steel_grades && presets.steel_grades[0]) || 'CR18')}" placeholder="VD: CR18" maxlength="100" enterkeyhint="next">
           </div>
           <div class="form-group">
             <label>Tổng Số Giỏ</label>
             <input type="number" class="bsk-count input-lg input-highlight" value="${escapeHtml(data.basket_count || '')}" placeholder="0" min="0" max="100000" step="any" inputmode="decimal" enterkeyhint="next">
+          </div>
+        </div>
+
+        <div class="grid grid-2 mt-2">
+          <div class="form-group">
+            <label>Từ Giỏ Số</label>
+            <input type="number" class="bsk-from input-lg" value="${numberAttr(data.from_val || data.basket_from)}" placeholder="VD: 1" min="0" max="100000" step="1" inputmode="numeric" enterkeyhint="next">
+          </div>
+          <div class="form-group">
+            <label>Đến Giỏ Số</label>
+            <input type="number" class="bsk-to input-lg" value="${numberAttr(data.to_val || data.basket_to)}" placeholder="VD: 5" min="0" max="100000" step="1" inputmode="numeric" enterkeyhint="next">
           </div>
         </div>
 
@@ -1164,11 +1209,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="grid grid-2">
           <div class="form-group">
             <label>Tên Sản Phẩm <span class="req">*</span></label>
-            <input type="text" class="tmb-product input-lg" value="${escapeHtml(data.product_name || 'D25')}" list="prodList" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
+            <input type="text" class="tmb-product input-lg" list="presetProducts" value="${escapeHtml(data.product_name || (presets.products && presets.products[0]) || 'D25')}" placeholder="VD: D25" maxlength="100" enterkeyhint="next">
           </div>
           <div class="form-group">
             <label>Khách Hàng <span class="req">*</span></label>
-            <input type="text" class="tmb-customer input-lg" value="${escapeHtml(data.customer || 'Molycop')}" list="custList" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
+            <input type="text" class="tmb-customer input-lg" list="presetCustomers" value="${escapeHtml(data.customer || (presets.customers && presets.customers[0]) || 'Molycop')}" placeholder="VD: Molycop" maxlength="100" enterkeyhint="next">
           </div>
         </div>
 
@@ -1233,8 +1278,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         product_name: card.querySelector('.bsk-product').value,
         customer: card.querySelector('.bsk-customer').value,
         steel_grade: card.querySelector('.bsk-steel').value,
-        hasContent: rowHasContent([card.querySelector('.bsk-count').value, card.querySelector('.bsk-weight').value],
-          card.querySelector('.bsk-notes').value)
+        hasContent: rowHasContent([
+          card.querySelector('.bsk-count').value,
+          card.querySelector('.bsk-from').value,
+          card.querySelector('.bsk-to').value,
+          card.querySelector('.bsk-weight').value
+        ], card.querySelector('.bsk-notes').value)
       })
     },
     {
@@ -1395,6 +1444,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         customer: card.querySelector('.bsk-customer').value.trim(),
         steel_grade: card.querySelector('.bsk-steel').value.trim(),
         basket_count: count,
+        from_val: card.querySelector('.bsk-from').value.trim(),
+        to_val: card.querySelector('.bsk-to').value.trim(),
         total_weight: weight === null ? count * 350 : weight,
         notes: notes
       });
@@ -1429,10 +1480,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       staff_present: parseIntOr(staffPresentInput.value, staffTotal),
       leave_permitted: parseIntOr(leavePermittedInput.value, 0),
       leave_permitted_names: document.getElementById('leavePermittedNames').value.trim(),
+      leave_rotating: parseIntOr(leaveRotatingInput.value, 0),
+      leave_rotating_names: leaveRotatingNamesInput.value.trim(),
       leave_unpermitted: parseIntOr(leaveUnpermittedInput.value, 0),
       leave_unpermitted_names: document.getElementById('leaveUnpermittedNames').value.trim(),
       issues: document.getElementById('shiftIssues').value.trim(),
       suggestions: document.getElementById('shiftSuggestions').value.trim(),
+      shift_tasks: document.getElementById('shiftTasks').value.trim(),
       start_time: startTimeInput.value.trim(),
       end_time: endTimeInput.value.trim(),
       packaging: packaging,
@@ -1668,13 +1722,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h2>Chấm Công Toàn Phân Xưởng</h2>
         </div>
         <div class="grid grid-3">
-          <div><strong>Sĩ số:</strong> ${formatNumber(attendance.total_staff)} người</div>
-          <div><strong>Có mặt:</strong> ${formatNumber(attendance.present)} người</div>
-          <div><strong>Vắng mặt:</strong> ${formatNumber(absentCount(attendance.total_staff, attendance.present))} người</div>
+          <div><strong>Sĩ số:</strong> <span class="summary-val">${formatNumber(attendance.total_staff)}</span> người</div>
+          <div><strong>Có mặt:</strong> <span class="summary-val">${formatNumber(attendance.present)}</span> người</div>
+          <div><strong>Vắng mặt:</strong> <span class="summary-val">${formatNumber(absentCount(attendance.total_staff, attendance.present))}</span> người</div>
         </div>
-        <div class="mt-2" style="font-size: 0.9rem; color: var(--slate-700);">
-          <div><strong>Nghỉ phép:</strong> ${escapeHtml(attendance.leave_notes)}</div>
-          <div><strong>Nghỉ không phép:</strong> ${escapeHtml(attendance.unpermitted)}</div>
+        <div class="mt-2" style="font-size: 0.9rem; color: var(--slate-700); line-height: 1.6;">
+          <div><strong>Nghỉ phép:</strong> <span class="summary-val">${escapeHtml(attendance.leave_notes)}</span></div>
+          <div><strong>Nghỉ luân phiên:</strong> <span class="summary-val">${attendance.leave_rotating ? `${formatNumber(attendance.leave_rotating)} người (${escapeHtml(attendance.rotating_notes)})` : escapeHtml(attendance.rotating_notes || 'Ko')}</span></div>
+          <div><strong>Nghỉ không phép:</strong> <span class="summary-val">${escapeHtml(attendance.unpermitted)}</span></div>
         </div>
       </div>
 
@@ -1685,7 +1740,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h2>Bao Gói Sản Phẩm (Đã Cộng Dồn Giữa Các Ca)</h2>
         </div>
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table summary-table">
             <thead>
               <tr>
                 <th>Tên SP</th>
@@ -1727,13 +1782,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h2>Số Lượng Giỏ Bi Ra Sau Tôi (Cộng Dồn)</h2>
         </div>
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table summary-table">
             <thead>
               <tr>
                 <th>Tên SP</th>
                 <th>Khách Hàng</th>
                 <th>Mác Thép</th>
                 <th>Tổng Số Giỏ</th>
+                <th>Từ Giỏ - Đến Giỏ</th>
                 <th>Tổng Khối Lượng (Kg)</th>
                 <th>Ghi Chú</th>
               </tr>
@@ -1745,10 +1801,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                   <td>${escapeHtml(b.customer)}</td>
                   <td>${escapeHtml(b.steel_grade)}</td>
                   <td><strong>${formatNumber(b.basket_count)}</strong></td>
+                  <td>${b.from_val && b.to_val ? escapeHtml(String(b.from_val)) + ' → ' + escapeHtml(String(b.to_val)) : '-'}</td>
                   <td>${formatNumber(b.total_weight)}</td>
                   <td>${escapeHtml(b.notes)}</td>
                 </tr>
-              `).join('') : '<tr><td colspan="6" style="text-align: center; color: var(--slate-600);">Không có số liệu</td></tr>'}
+              `).join('') : '<tr><td colspan="7" style="text-align: center; color: var(--slate-600);">Không có số liệu</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -1761,7 +1818,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <h2>Số Mẻ Bi Xóc (Cộng Dồn Máy 1 & Máy 2)</h2>
         </div>
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table summary-table">
             <thead>
               <tr>
                 <th>Tên SP</th>
@@ -1773,16 +1830,52 @@ document.addEventListener('DOMContentLoaded', async () => {
               </tr>
             </thead>
             <tbody>
-              ${(data.tumbling || []).length > 0 ? (data.tumbling || []).map(t => `
-                <tr>
-                  <td><strong>${escapeHtml(t.product_name)}</strong></td>
-                  <td>${escapeHtml(t.customer)}</td>
-                  <td>${formatNumber(t.m1)}</td>
-                  <td>${formatNumber(t.m2)}</td>
-                  <td><strong>${formatNumber(t.total_weight)}</strong></td>
-                  <td>${escapeHtml(t.notes)}</td>
-                </tr>
-              `).join('') : '<tr><td colspan="6" style="text-align: center; color: var(--slate-600);">Không có số liệu</td></tr>'}
+              ${(() => {
+                const items = data.tumbling || [];
+                if (items.length === 0) {
+                  return '<tr><td colspan="6" style="text-align: center; color: var(--slate-600);">Không có số liệu</td></tr>';
+                }
+                const rows = [];
+                let i = 0;
+                while (i < items.length) {
+                  const t = items[i];
+                  let span = 1;
+                  if (t.product_name) {
+                    while (i + span < items.length && items[i + span].product_name === t.product_name && items[i + span].customer === t.customer) {
+                      span++;
+                    }
+                  }
+                  for (let k = 0; k < span; k++) {
+                    const rowItem = items[i + k];
+                    const m1Text = rowItem.m1 ? formatNumber(rowItem.m1) : '-';
+                    const m2Text = rowItem.m2 ? formatNumber(rowItem.m2) : '-';
+                    const wtText = formatNumber(rowItem.total_weight);
+                    if (k === 0) {
+                      rows.push(`
+                        <tr>
+                          <td ${span > 1 ? `rowspan="${span}" style="vertical-align: middle; text-align: center;"` : ''}><strong>${escapeHtml(t.product_name)}</strong></td>
+                          <td ${span > 1 ? `rowspan="${span}" style="vertical-align: middle; text-align: center;"` : ''}>${escapeHtml(t.customer)}</td>
+                          <td>${m1Text}</td>
+                          <td>${m2Text}</td>
+                          <td><strong>${wtText}</strong></td>
+                          <td>${escapeHtml(rowItem.notes || '')}</td>
+                        </tr>
+                      `);
+                    } else {
+                      rows.push(`
+                        <tr>
+                          <td>${m1Text}</td>
+                          <td>${m2Text}</td>
+                          <td><strong>${wtText}</strong></td>
+                          <td>${escapeHtml(rowItem.notes || '')}</td>
+                        </tr>
+                      `);
+                    }
+                  }
+                  i += span;
+                }
+                return rows.join('');
+              })()}
             </tbody>
           </table>
         </div>
@@ -1797,13 +1890,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div>
           <h4 style="color: var(--danger); margin-bottom: 0.5rem;">Danh Sách Sự Cố:</h4>
           ${(data.issues && data.issues.length > 0) ? `
-            <ul style="padding-left: 1.5rem; color: var(--slate-800); line-height: 1.8;">
-              ${data.issues.map(iss => `<li>${escapeHtml(iss)}</li>`).join('')}
+            <ul style="padding-left: 1.5rem; line-height: 1.8;">
+              ${data.issues.map(iss => `<li class="summary-val">${escapeHtml(iss)}</li>`).join('')}
             </ul>
           ` : '<p style="color: var(--success); font-weight: 500;">✓ Toàn ngày không có sự cố thiết bị.</p>'}
         </div>
         <div class="mt-2" style="border-top: 1px solid var(--slate-200); padding-top: 0.75rem;">
-          <strong>Yêu cầu - Đề xuất:</strong> ${escapeHtml(data.suggestions || 'KO')}
+          <strong>Yêu cầu - Đề xuất:</strong> <span class="summary-val">${escapeHtml(data.suggestions || 'KO')}</span>
+        </div>
+      </div>
+
+      <!-- XÁC NHẬN & CHỮ KÝ -->
+      <div class="card" style="margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-around; align-items: flex-start; text-align: center; padding: 1rem 0;">
+          <div style="flex: 1; max-width: 250px;">
+            <div style="font-weight: 700; color: var(--slate-700); margin-bottom: 0.5rem; text-transform: uppercase;">GĐ Nhà Máy</div>
+            <div style="height: 85px; display: flex; align-items: center; justify-content: center;">
+              <img src="/signature_gd.png" alt="Chữ ký GĐ Nhà máy" style="max-height: 80px; max-width: 140px; object-fit: contain;">
+            </div>
+            <div style="font-size: 0.85rem; color: var(--slate-500); margin-top: 0.25rem;">(Đã ký)</div>
+          </div>
+          <div style="flex: 1; max-width: 250px;">
+            <div style="font-weight: 700; color: var(--slate-700); margin-bottom: 0.5rem; text-transform: uppercase;">Người Báo Cáo</div>
+            <div style="height: 85px; display: flex; align-items: flex-end; justify-content: center; font-weight: 600; color: var(--slate-800); padding-bottom: 8px;">
+              ${escapeHtml(data.reporter_name || 'Ngọc Quang')}
+            </div>
+            <div style="font-size: 0.85rem; color: var(--slate-500); margin-top: 0.25rem;">(Báo cáo tổng hợp)</div>
+          </div>
         </div>
       </div>
     `;
@@ -1996,6 +2109,498 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (err.status === 401) return;
       tbodyUsers.innerHTML = `<tr><td colspan="5" style="color: var(--danger);">Lỗi tải danh sách: ${escapeHtml(err.message)}</td></tr>`;
     }
+  }
+
+  // ================= ADMIN: PRESETS (MASTER DATA) MANAGEMENT =================
+  const createPresetForm = document.getElementById('createPresetForm');
+  const btnRefreshPresets = document.getElementById('btnRefreshPresets');
+  const listPresetProducts = document.getElementById('listPresetProducts');
+  const listPresetCustomers = document.getElementById('listPresetCustomers');
+  const listPresetSteelGrades = document.getElementById('listPresetSteelGrades');
+
+  if (btnRefreshPresets) {
+    btnRefreshPresets.addEventListener('click', loadAdminPresets);
+  }
+
+  if (createPresetForm) {
+    createPresetForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const category = document.getElementById('newPresetCategory').value;
+      const name = document.getElementById('newPresetName').value.trim();
+      const sort_order = parseInt(document.getElementById('newPresetOrder').value, 10) || 0;
+      if (!name) return;
+
+      try {
+        await apiFetch('/api/admin/presets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, name, sort_order }),
+        });
+        document.getElementById('newPresetName').value = '';
+        showToast(`Đã thêm "${name}" vào danh mục!`);
+        await loadAdminPresets();
+        await loadUserPresets();
+      } catch (err) {
+        reportError(err);
+      }
+    });
+  }
+
+  async function loadAdminPresets() {
+    if (!listPresetProducts) return;
+    try {
+      const res = await apiFetch('/api/admin/presets');
+      const items = await res.json();
+
+      listPresetProducts.innerHTML = '';
+      listPresetCustomers.innerHTML = '';
+      listPresetSteelGrades.innerHTML = '';
+
+      items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'preset-item' + (item.active ? '' : ' inactive');
+        div.innerHTML = `
+          <span class="preset-name">${escapeHtml(item.name)}</span>
+          <div class="preset-actions">
+            <button class="btn-toggle-preset" title="${item.active ? 'Ẩn khỏi gợi ý' : 'Hiện lại gợi ý'}">${item.active ? 'Ẩn' : 'Bật'}</button>
+            <button class="btn-del-preset" title="Xóa mục này">✕</button>
+          </div>
+        `;
+
+        div.querySelector('.btn-toggle-preset').addEventListener('click', async () => {
+          try {
+            await apiFetch(`/api/admin/presets/${item.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ active: !item.active }),
+            });
+            await loadAdminPresets();
+            await loadUserPresets();
+          } catch (err) {
+            reportError(err);
+          }
+        });
+
+        div.querySelector('.btn-del-preset').addEventListener('click', async () => {
+          if (!confirm(`Bạn có chắc muốn xóa "${item.name}" khỏi danh mục?`)) return;
+          try {
+            await apiFetch(`/api/admin/presets/${item.id}`, { method: 'DELETE' });
+            showToast(`Đã xóa "${item.name}"`);
+            await loadAdminPresets();
+            await loadUserPresets();
+          } catch (err) {
+            reportError(err);
+          }
+        });
+
+        if (item.category === 'product') {
+          listPresetProducts.appendChild(div);
+        } else if (item.category === 'customer') {
+          listPresetCustomers.appendChild(div);
+        } else if (item.category === 'steel_grade') {
+          listPresetSteelGrades.appendChild(div);
+        }
+      });
+    } catch (err) {
+      if (err.status === 401) return;
+      console.error('Lỗi tải danh mục admin:', err);
+    }
+  }
+
+  // ================= ADMIN: BACKUP & DOWNLOAD MASTER EXCEL =================
+  const btnDownloadDbBackup = document.getElementById('btnDownloadDbBackup');
+  const btnDownloadMasterExcel = document.getElementById('btnDownloadMasterExcel');
+
+  if (btnDownloadDbBackup) {
+    btnDownloadDbBackup.addEventListener('click', async () => {
+      const orig = btnDownloadDbBackup.innerHTML;
+      btnDownloadDbBackup.disabled = true;
+      btnDownloadDbBackup.textContent = 'Đang nén dữ liệu...';
+      try {
+        const res = await apiFetch('/api/admin/backup-db');
+        const blob = await res.blob();
+        const filename = filenameFromContentDisposition(
+          res.headers.get('Content-Disposition'),
+          `vico_production_backup_${todayStr().replace(/-/g, '')}.db`
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        showToast('Tải bản sao lưu database thành công!');
+      } catch (err) {
+        reportError(err);
+      } finally {
+        btnDownloadDbBackup.disabled = false;
+        btnDownloadDbBackup.innerHTML = orig;
+      }
+    });
+  }
+
+  if (btnDownloadMasterExcel) {
+    btnDownloadMasterExcel.addEventListener('click', async () => {
+      const orig = btnDownloadMasterExcel.innerHTML;
+      btnDownloadMasterExcel.disabled = true;
+      btnDownloadMasterExcel.textContent = 'Đang tải file...';
+      try {
+        const res = await apiFetch('/api/admin/download-master-excel');
+        const blob = await res.blob();
+        const filename = filenameFromContentDisposition(
+          res.headers.get('Content-Disposition'),
+          'BAO_CAO_TONG_HOP_HANG_NGAY.xlsx'
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        showToast('Tải file Excel tổng hợp gốc thành công!');
+      } catch (err) {
+        reportError(err);
+      } finally {
+        btnDownloadMasterExcel.disabled = false;
+        btnDownloadMasterExcel.innerHTML = orig;
+      }
+    });
+  }
+
+  // ================= TAB 3: ANALYTICS & CHARTS =================
+  const statStartDate = document.getElementById('statStartDate');
+  const statEndDate = document.getElementById('statEndDate');
+  const btnLoadAnalytics = document.getElementById('btnLoadAnalytics');
+  const btnStat7Days = document.getElementById('btnStat7Days');
+  const btnStat30Days = document.getElementById('btnStat30Days');
+  const btnStatThisMonth = document.getElementById('btnStatThisMonth');
+
+  let chartDailyTrendInstance = null;
+  let chartByProductInstance = null;
+  let chartByShiftInstance = null;
+
+  function setDateRangeLastNDays(days) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - (days - 1));
+    if (statStartDate && statEndDate) {
+      statStartDate.value = start.toISOString().split('T')[0];
+      statEndDate.value = end.toISOString().split('T')[0];
+    }
+  }
+
+  function setDateRangeThisMonth() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (statStartDate && statEndDate) {
+      statStartDate.value = start.toISOString().split('T')[0];
+      statEndDate.value = now.toISOString().split('T')[0];
+    }
+  }
+
+  if (btnStat7Days) {
+    btnStat7Days.addEventListener('click', () => {
+      btnStat7Days.classList.add('active');
+      if (btnStat30Days) btnStat30Days.classList.remove('active');
+      if (btnStatThisMonth) btnStatThisMonth.classList.remove('active');
+      setDateRangeLastNDays(7);
+      loadAnalytics();
+    });
+  }
+
+  if (btnStat30Days) {
+    btnStat30Days.addEventListener('click', () => {
+      if (btnStat7Days) btnStat7Days.classList.remove('active');
+      btnStat30Days.classList.add('active');
+      if (btnStatThisMonth) btnStatThisMonth.classList.remove('active');
+      setDateRangeLastNDays(30);
+      loadAnalytics();
+    });
+  }
+
+  if (btnStatThisMonth) {
+    btnStatThisMonth.addEventListener('click', () => {
+      if (btnStat7Days) btnStat7Days.classList.remove('active');
+      if (btnStat30Days) btnStat30Days.classList.remove('active');
+      btnStatThisMonth.classList.add('active');
+      setDateRangeThisMonth();
+      loadAnalytics();
+    });
+  }
+
+  if (btnLoadAnalytics) {
+    btnLoadAnalytics.addEventListener('click', () => {
+      if (btnStat7Days) btnStat7Days.classList.remove('active');
+      if (btnStat30Days) btnStat30Days.classList.remove('active');
+      if (btnStatThisMonth) btnStatThisMonth.classList.remove('active');
+      loadAnalytics();
+    });
+  }
+
+  function initAndLoadAnalytics() {
+    if (!statStartDate || !statEndDate) return;
+    if (!statStartDate.value || !statEndDate.value) {
+      setDateRangeLastNDays(7);
+    }
+    loadAnalytics();
+  }
+
+  async function loadAnalytics() {
+    if (!statStartDate || !statEndDate) return;
+    const start = statStartDate.value;
+    const end = statEndDate.value;
+    if (!start || !end) {
+      alert('Vui lòng chọn cả Ngày bắt đầu và Ngày kết thúc');
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/api/period-summary?start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}`);
+      const data = await res.json();
+      renderAnalytics(data);
+    } catch (err) {
+      if (err.status === 401) return;
+      reportError(err);
+    }
+  }
+
+  function renderAnalytics(data) {
+    // 1. Update KPI cards
+    const pkg = data.packaging || {};
+    const bsk = data.baskets || {};
+    const att = data.attendance || {};
+
+    const elSorted = document.getElementById('kpiTotalSorted');
+    const elSortedTon = document.getElementById('kpiTotalSortedTon');
+    const elWaste = document.getElementById('kpiWasteRate');
+    const elWasteKg = document.getElementById('kpiTotalWaste');
+    const elBaskets = document.getElementById('kpiTotalBaskets');
+    const elBskWeight = document.getElementById('kpiBasketWeight');
+    const elAttRate = document.getElementById('kpiAttendanceRate');
+    const elShiftsCount = document.getElementById('kpiShiftsCount');
+
+    if (elSorted) elSorted.textContent = `${formatNumber(pkg.total_sorted || 0)} Kg`;
+    if (elSortedTon) elSortedTon.textContent = `${((pkg.total_sorted || 0) / 1000).toFixed(2)} tấn`;
+    if (elWaste) {
+      const rate = pkg.waste_rate || 0;
+      elWaste.textContent = `${rate}%`;
+      elWaste.className = 'kpi-value ' + (rate > 2 ? 'text-danger' : (rate > 1 ? 'text-warn' : 'text-success'));
+    }
+    if (elWasteKg) elWasteKg.textContent = `Hủy: ${formatNumber(pkg.total_waste || 0)} Kg`;
+    if (elBaskets) elBaskets.textContent = `${formatNumber(bsk.total_baskets || 0)} giỏ`;
+    if (elBskWeight) elBskWeight.textContent = `${((bsk.total_weight || 0) / 1000).toFixed(2)} tấn`;
+    if (elAttRate) elAttRate.textContent = `${att.attendance_rate || 0}%`;
+    if (elShiftsCount) elShiftsCount.textContent = `${att.total_shifts || 0} ca (${att.total_days || 0} ngày)`;
+
+    // 2. Render Charts if Chart is available
+    if (typeof Chart === 'undefined') {
+      console.warn('Chart.js chưa sẵn sàng.');
+      return;
+    }
+
+    renderDailyTrendChart(data.daily_series || []);
+    renderByProductChart(pkg.by_product || []);
+    renderByShiftChart(data.by_shift || {});
+  }
+
+  function renderDailyTrendChart(series) {
+    const canvas = document.getElementById('chartDailyTrend');
+    if (!canvas) return;
+    if (chartDailyTrendInstance) {
+      chartDailyTrendInstance.destroy();
+      chartDailyTrendInstance = null;
+    }
+
+    const labels = series.map(s => formatDateDisplay(s.date));
+    const sortedData = series.map(s => s.sorted_weight);
+    const wasteRates = series.map(s => s.waste_rate);
+
+    chartDailyTrendInstance = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            type: 'line',
+            label: 'Tỉ lệ phế phẩm (%)',
+            data: wasteRates,
+            borderColor: '#ea580c',
+            backgroundColor: '#ea580c',
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#ea580c',
+            tension: 0.25,
+            spanGaps: true,
+            yAxisID: 'y1',
+            order: 1,
+          },
+          {
+            type: 'bar',
+            label: 'Sản lượng phân loại (Kg)',
+            data: sortedData,
+            backgroundColor: 'rgba(37, 99, 235, 0.75)',
+            borderColor: '#2563eb',
+            borderWidth: 1,
+            borderRadius: 4,
+            maxBarThickness: 45,
+            categoryPercentage: 0.7,
+            barPercentage: 0.85,
+            yAxisID: 'y',
+            order: 2,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            grid: { display: false }
+          },
+          y: {
+            type: 'linear',
+            position: 'left',
+            title: { display: true, text: 'Khối lượng (Kg)' },
+            beginAtZero: true,
+            ticks: {
+              callback: function(val) {
+                return Number(val).toLocaleString('vi-VN');
+              }
+            }
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: 'Tỉ lệ hủy (%)' },
+            beginAtZero: true,
+            grid: { drawOnChartArea: false },
+            ticks: {
+              callback: function(val) {
+                return Number(val).toFixed(1).replace('.', ',') + '%';
+              }
+            }
+          }
+        },
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const label = ctx.dataset.label || '';
+                const val = ctx.parsed.y;
+                if (ctx.dataset.yAxisID === 'y1') {
+                  if (val === null || val === undefined || isNaN(val)) {
+                    return `${label}: Không có ca`;
+                  }
+                  return `${label}: ${Number(val).toFixed(2).replace('.', ',')}%`;
+                }
+                return `${label}: ${Number(val || 0).toLocaleString('vi-VN')} Kg`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderByProductChart(byProduct) {
+    const canvas = document.getElementById('chartByProduct');
+    if (!canvas) return;
+    if (chartByProductInstance) {
+      chartByProductInstance.destroy();
+      chartByProductInstance = null;
+    }
+
+    const labels = byProduct.slice(0, 6).map(p => p.product_name);
+    const dataVals = byProduct.slice(0, 6).map(p => p.sorted_weight);
+    const colors = [
+      '#0284c7', '#2563eb', '#4f46e5', '#7c3aed', '#059669', '#d97706'
+    ];
+
+    chartByProductInstance = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: labels.length ? labels : ['Chưa có số liệu'],
+        datasets: [{
+          data: dataVals.length ? dataVals : [0],
+          backgroundColor: colors.slice(0, labels.length || 1),
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.label}: ${Number(ctx.parsed || 0).toLocaleString('vi-VN')} Kg`
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderByShiftChart(byShift) {
+    const canvas = document.getElementById('chartByShift');
+    if (!canvas) return;
+    if (chartByShiftInstance) {
+      chartByShiftInstance.destroy();
+      chartByShiftInstance = null;
+    }
+
+    chartByShiftInstance = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: ['Ca 1', 'Ca 2', 'Ca 3'],
+        datasets: [{
+          label: 'Sản lượng (Kg)',
+          data: [byShift.shift_1 || 0, byShift.shift_2 || 0, byShift.shift_3 || 0],
+          backgroundColor: [
+            'rgba(37, 99, 235, 0.8)',
+            'rgba(14, 165, 233, 0.8)',
+            'rgba(99, 102, 241, 0.8)'
+          ],
+          borderColor: ['#2563eb', '#0ea5e9', '#6366f1'],
+          borderWidth: 1,
+          borderRadius: 4,
+          maxBarThickness: 50
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { display: false }
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Kg' },
+            ticks: {
+              callback: function(val) {
+                return Number(val).toLocaleString('vi-VN');
+              }
+            }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString('vi-VN')} Kg`
+            }
+          }
+        }
+      }
+    });
   }
 
   // UTILITIES

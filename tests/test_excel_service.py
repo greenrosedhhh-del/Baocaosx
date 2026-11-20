@@ -6,10 +6,12 @@ import xml.etree.ElementTree as ET
 
 import openpyxl
 import pytest
+from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage
 
 import excel_service
+from excel_service import RED_FONT_COLOR
 
 
 def _summary(**overrides):
@@ -83,6 +85,78 @@ def test_tumbling_rows_beyond_template_are_merged_into_last_row(tmp_path):
     assert ws.cell(35, 3).value == 3
     assert ws.cell(35, 5).value == 6
     assert ws.cell(35, 7).value == 3000
+
+
+def test_tumbling_identical_products_are_merged_in_excel(tmp_path):
+    items = [
+        {"product_name": "D25", "customer": "Molycop", "m1": 2, "m2": 6, "total_weight": 12700, "notes": ""},
+        {"product_name": "D40", "customer": "Molycop", "m1": 0, "m2": 1, "total_weight": 3000, "notes": ""},
+        {"product_name": "D40", "customer": "Molycop", "m1": 0, "m2": 1, "total_weight": 3000, "notes": "Sạch cát"},
+        {"product_name": "D40", "customer": "Molycop", "m1": 5, "m2": 0, "total_weight": 15500, "notes": "Khô dầu"},
+        {"product_name": "D90", "customer": "Molycop", "m1": 5, "m2": 0, "total_weight": 14500, "notes": "Sạch cát"},
+    ]
+    ws = _sheet(tmp_path, _summary(tumbling=items))
+
+    # Hàng 30: D25 (đơn lẻ, không gộp)
+    assert ws.cell(30, 1).value == "D25"
+    assert ws.cell(30, 2).value == "Molycop"
+    assert ws.cell(30, 3).value == 2
+    assert ws.cell(30, 5).value == 6
+
+    # Hàng 31 đến 33: D40 (3 dòng cùng SP D40 và Molycop -> gộp A31:A33 và B31:B33)
+    merged_str_ranges = [str(r) for r in ws.merged_cells.ranges]
+    assert "A31:A33" in merged_str_ranges
+    assert "B31:B33" in merged_str_ranges
+
+    assert ws.cell(31, 1).value == "D40"
+    assert ws.cell(31, 2).value == "Molycop"
+    # m1 = 0 hiển thị ô trống
+    assert ws.cell(31, 3).value is None
+    assert ws.cell(31, 5).value == 1
+
+    # Dòng 33: m1 = 5, m2 = 0 hiển thị ô trống
+    assert ws.cell(33, 3).value == 5
+    assert ws.cell(33, 5).value is None
+    assert ws.cell(33, 7).value == 15500
+    assert ws.cell(33, 9).value == "Khô dầu"
+
+    # Hàng 34: D90
+    assert ws.cell(34, 1).value == "D90"
+    assert ws.cell(34, 2).value == "Molycop"
+
+
+def test_report_data_cells_have_red_font_color(tmp_path):
+    summary = _summary(
+        packaging=[{"product_name": "D25", "customer": "Nhập TQ", "weight_sorted": 2745, "weight_waste": 160, "notes": "Nhặt bi lỗi"}],
+        baskets=[{"product_name": "D40", "customer": "Molycop", "steel_grade": "CR18", "basket_count": 99, "total_weight": 34650, "notes": ""}],
+        tumbling=[{"product_name": "D25", "customer": "Molycop", "m1": 2, "m2": 7, "total_weight": 12700, "notes": ""}],
+        issues=["Sửa cửa sáng tới đầu"],
+        suggestions="Ko",
+        attendance={"total_staff": 15, "present": 15, "leave_notes": "Ko", "unpermitted": "Ko"}
+    )
+    ws = _sheet(tmp_path, summary)
+
+    # Bao gói: tên SP, khách hàng, khối lượng, ghi chú đều có màu đỏ (00FF0000)
+    for col in [1, 2, 5, 7, 9, 10]:
+        assert ws.cell(11, col).font.color.rgb == "00FF0000"
+
+    # Giỏ bi: tên SP, khách hàng, mác thép, số giỏ, khối lượng đều có màu đỏ
+    for col in [1, 2, 5, 7, 9]:
+        assert ws.cell(21, col).font.color.rgb == "00FF0000"
+
+    # Bi xóc: tên SP, khách hàng, máy 1, máy 2, tổng KL đều có màu đỏ
+    for col in [1, 2, 3, 5, 7]:
+        assert ws.cell(30, col).font.color.rgb == "00FF0000"
+
+    # Sự cố và Đề xuất đều có màu đỏ
+    assert ws.cell(28, 10).font.color.rgb == "00FF0000"
+    assert ws.cell(37, 1).font.color.rgb == "00FF0000"
+
+    # Nghỉ phép (K13:L13 merged, dữ liệu là CellRichText khi tạo, trở thành chuỗi sau save/reload)
+    k13 = ws.cell(13, 11)
+    assert "Nghỉ phép" in str(k13.value)
+    assert "Ko" in str(k13.value)
+
 
 
 def test_rows_within_template_limit_are_written_unchanged(tmp_path):
@@ -356,3 +430,44 @@ def test_backup_keeps_only_most_recent_copies(tmp_path, monkeypatch):
     assert len(remaining) == excel_service.MAX_BACKUPS
     assert os.path.basename(new_backup) in remaining
     assert "BAO_CAO_TONG_HOP_backup_20260901_000000.xlsx" not in remaining
+
+
+def test_issues_section_merged_range_and_wrap_text(tmp_path):
+    summary = _summary(
+        issues=[
+            "Sửa cửa sáng tới đầu từ 6h15' - 7h30'",
+            "Cầu hồi sọt không lên xuống từ 13h15' - 13h40'",
+            "Kênh sọt từ 18h - 19h30'",
+            "Máy xóc 1 bung tấm lót từ 22h30' - 4h"
+        ]
+    )
+    ws = _sheet(tmp_path, summary)
+    merged_ranges = [str(r) for r in ws.merged_cells.ranges]
+    assert "J28:L28" in merged_ranges
+    assert "J29:L29" in merged_ranges
+    assert "J30:L30" in merged_ranges
+    assert "J31:L31" in merged_ranges
+
+    assert ws["J28"].value == "- Sửa cửa sáng tới đầu từ 6h15' - 7h30'"
+    assert ws["J29"].value == "- Cầu hồi sọt không lên xuống từ 13h15' - 13h40'"
+    assert ws["J30"].value == "- Kênh sọt từ 18h - 19h30'"
+    assert ws["J31"].value == "- Máy xóc 1 bung tấm lót từ 22h30' - 4h"
+    assert ws["J32"].value is None
+
+    for r in range(28, 32):
+        c = ws.cell(r, 10)
+        assert c.font.color.rgb == "00FF0000"
+        assert c.alignment.horizontal == "left"
+        assert c.alignment.wrap_text is True
+
+
+def test_report_includes_logo_and_signature_default(tmp_path):
+    ws = _sheet(tmp_path, _summary())
+    assert len(ws._images) == 2
+    # Verify logo anchored at A1 (row 0, col 0) and signature anchored at B44 (row 43, col 1)
+    anchors = [(img.anchor._from.row, img.anchor._from.col) for img in ws._images if getattr(getattr(img, "anchor", None), "_from", None)]
+    assert (0, 0) in anchors
+    assert (43, 1) in anchors
+
+
+

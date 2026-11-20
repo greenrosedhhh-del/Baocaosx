@@ -54,18 +54,20 @@
     return numbers.some(n => parseFloatOr(n, 0) > 0) || String(notes || '').trim().length > 0;
   }
 
-  const ATTENDANCE_DEFAULTS = { staff_total: 5, staff_present: 5, leave_permitted: 0, leave_unpermitted: 0 };
+  const ATTENDANCE_DEFAULTS = { staff_total: 5, staff_present: 5, leave_permitted: 0, leave_rotating: 0, leave_unpermitted: 0 };
 
   function draftHasContent(draft) {
     if (!draft) return false;
     const packaging = (draft.packaging || []).some(p => rowHasContent([p.weight_sorted, p.weight_waste], p.notes));
-    const baskets = (draft.baskets || []).some(b => rowHasContent([b.basket_count, b.total_weight], b.notes));
+    const baskets = (draft.baskets || []).some(b => rowHasContent([b.basket_count, b.total_weight, b.basket_from, b.basket_to, b.from_val, b.to_val], b.notes));
     const tumbling = (draft.tumbling || []).some(t => rowHasContent([t.m1, t.m2, t.total_weight], t.notes));
     const texts = String(draft.issues || '').trim() || String(draft.suggestions || '').trim();
     // Chấm công khác mặc định / có tên người nghỉ / bỏ tích an toàn cũng là dữ liệu cần giữ
     const attendance = Object.keys(ATTENDANCE_DEFAULTS).some(key =>
       draft[key] !== undefined && parseIntOr(draft[key], ATTENDANCE_DEFAULTS[key]) !== ATTENDANCE_DEFAULTS[key]);
-    const names = String(draft.leave_permitted_names || '').trim() || String(draft.leave_unpermitted_names || '').trim();
+    const names = String(draft.leave_permitted_names || '').trim() ||
+                  String(draft.leave_rotating_names || '').trim() ||
+                  String(draft.leave_unpermitted_names || '').trim();
     const safety = draft.safety_production === false || draft.safety_ppe === false || draft.safety_equip === false;
     return packaging || baskets || tumbling || Boolean(texts) || attendance || Boolean(names) || safety;
   }
@@ -181,18 +183,18 @@
   }
 
   // Cùng quy tắc với máy chủ (ShiftReportModel.check_attendance)
-  function attendanceProblem({ staffTotal, staffPresent, leavePermitted, leaveUnpermitted }) {
+  function attendanceProblem({ staffTotal, staffPresent, leavePermitted, leaveRotating, leaveUnpermitted }) {
     if (staffPresent > staffTotal) {
       return {
         field: 'staffPresent',
         message: `Số người có mặt (${staffPresent}) không được lớn hơn tổng sĩ số (${staffTotal})`
       };
     }
-    const onLeave = (leavePermitted || 0) + (leaveUnpermitted || 0);
+    const onLeave = (leavePermitted || 0) + (leaveRotating || 0) + (leaveUnpermitted || 0);
     if (onLeave > staffTotal) {
       return {
         field: 'leavePermitted',
-        message: `Tổng số người nghỉ (có phép + không phép = ${onLeave}) không được lớn hơn tổng sĩ số (${staffTotal})`
+        message: `Tổng số người nghỉ (có phép + luân phiên + không phép = ${onLeave}) không được lớn hơn tổng sĩ số (${staffTotal})`
       };
     }
     return null;

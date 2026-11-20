@@ -23,17 +23,63 @@ from urllib.parse import unquote
 
 import openpyxl
 from openpyxl.cell.cell import MergedCell
-from openpyxl.styles import Alignment
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
+from openpyxl.drawing.image import Image as OpenpyxlImage
+from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils.cell import range_boundaries
 from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
 
+RED_FONT_COLOR = "FF0000"
+
+# Định dạng số: dấu chấm phân cách hàng nghìn, 2 chữ số thập phân cho tỷ lệ
+NUM_FMT_THOUSANDS = '#,##0'
+NUM_FMT_PERCENT_2DP = '0.00'
+
+
+def _apply_red_font(cell) -> None:
+    if cell.font:
+        f = copy(cell.font)
+        f.color = RED_FONT_COLOR
+        cell.font = f
+
+
+def _attach_default_images(ws) -> None:
+    """Chèn chữ ký GĐ Nhà máy mặc định tại B44 và logo VICO tại A1."""
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = OpenpyxlImage(LOGO_PATH)
+            logo.width = 110
+            logo.height = 70
+            ws.add_image(logo, "A1")
+        except Exception:
+            pass
+
+    if os.path.exists(SIGNATURE_PATH):
+        try:
+            sig = OpenpyxlImage(SIGNATURE_PATH)
+            sig.width = 105
+            sig.height = 85
+            ws.add_image(sig, "B44")
+        except Exception:
+            pass
+
+
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template_report.xlsx")
+SIGNATURE_PATH = os.path.join(os.path.dirname(__file__), "assets", "signature_gd.png")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "vico_logo.png")
 MASTER_PATH = os.environ.get(
     "VICO_MASTER_PATH",
     os.path.join(os.path.dirname(__file__), "BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx"),
 )
-BACKUP_DIR = os.path.join(os.path.dirname(MASTER_PATH), "backups")
+
+
+def get_master_path() -> str:
+    return os.environ.get("VICO_MASTER_PATH", MASTER_PATH)
+
+
+BACKUP_DIR = os.path.join(os.path.dirname(get_master_path()), "backups")
 
 # Số dòng dữ liệu cố định của từng mục trong mẫu báo cáo
 ROW_LIMITS = {"packaging": 4, "baskets": 4, "tumbling": 6}
@@ -141,10 +187,12 @@ def _anchor_cell(ws, row: int, col: int):
     return cell
 
 
-def set_cell(ws, row: int, col: int, val):
+def set_cell(ws, row: int, col: int, val, red: bool = False, number_format: str = None):
     """Ghi dữ liệu (kể cả khi ô nằm trong vùng gộp). Chuỗi luôn được lưu dạng văn bản:
     bỏ ký tự điều khiển và không bao giờ trở thành công thức (chống chèn công thức)."""
     cell = _anchor_cell(ws, row, col)
+    if red:
+        _apply_red_font(cell)
     if isinstance(val, str):
         text = clean_text(val)
         if text == "":
@@ -156,13 +204,18 @@ def set_cell(ws, row: int, col: int, val):
             cell.quotePrefix = True  # Excel giữ là văn bản kể cả khi người dùng sửa ô
     else:
         cell.value = val
+    if number_format:
+        cell.number_format = number_format
 
 
-def set_formula(ws, row: int, col: int, formula: str):
+def set_formula(ws, row: int, col: int, formula: str, red: bool = False):
     """Chỉ dùng cho công thức do chính chương trình tạo (không chứa dữ liệu người dùng)."""
     if not formula.startswith("="):
         raise ValueError("formula must start with '='")
-    _anchor_cell(ws, row, col).value = formula
+    cell = _anchor_cell(ws, row, col)
+    if red:
+        _apply_red_font(cell)
+    cell.value = formula
 
 
 def _merge_range(ws, cell_range: str) -> None:
@@ -210,7 +263,14 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
     ws.title = format_sheet_name(date_str).strip()
 
     # 1. Header: Date (J4), Ca (A6), an toàn (D7, J7)
-    set_cell(ws, 4, 10, f" Ngày lập :     {dt.day:02d} / {dt.month:02d} / {dt.year}")
+    date_display = f"{dt.day:02d} / {dt.month:02d} / {dt.year}"
+    cell_j4 = _anchor_cell(ws, 4, 10)
+    font_j4 = cell_j4.font.name if cell_j4.font else "Times New Roman"
+    sz_j4 = cell_j4.font.size if cell_j4.font else 11
+    cell_j4.value = CellRichText(
+        " Ngày lập :     ",
+        TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=font_j4, sz=sz_j4), clean_text(date_display))
+    )
     submitted_shifts = summary_data.get("submitted_shifts")
     if submitted_shifts:
         set_cell(ws, 6, 1, "Ca: " + ", ".join(str(s) for s in submitted_shifts))
@@ -231,59 +291,98 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
     leave_detail = attendance.get("leave_detail", "")
     unpermitted = attendance.get("unpermitted", "Ko")
 
-    set_cell(ws, 10, 11, f"Tổng sĩ số: ___{total_staff}___")
-    set_cell(ws, 11, 11, f"Có mặt: __{present}__")
-    set_cell(ws, 13, 11, "1. Nghỉ phép:")
-    set_cell(ws, 13, 12, leave_notes if leave_notes else "Ko")
+    cell_k10 = _anchor_cell(ws, 10, 11)
+    font_name = cell_k10.font.name if cell_k10.font else "Times New Roman"
+    sz = cell_k10.font.size if cell_k10.font else 11
+    cell_k10.value = CellRichText(
+        "Tổng sĩ số: ___",
+        TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=font_name, sz=sz), clean_text(str(total_staff))),
+        "___"
+    )
+
+    cell_k11 = _anchor_cell(ws, 11, 11)
+    cell_k11.value = CellRichText(
+        "Có mặt: __",
+        TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=font_name, sz=sz), clean_text(str(present))),
+        "__"
+    )
+
+    _merge_range(ws, "K13:L13")
+    cell_k13 = _anchor_cell(ws, 13, 11)
+    leave_str = clean_text(str(leave_notes if leave_notes else "Ko"))
+    cell_k13.value = CellRichText(
+        "1. Nghỉ phép: ",
+        TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=font_name, sz=9), leave_str)
+    )
+    cell_k13.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    # Tăng chiều cao nếu nội dung quá dài (>24 ký tự ≈ 2 dòng)
+    if len(leave_str) > 10:
+        need_h = max(18, 13 * math.ceil((15 + len(leave_str)) / 24) + 4)
+        ws.row_dimensions[13].height = max(ws.row_dimensions[13].height or 18, need_h)
     if leave_detail:
-        set_cell(ws, 17, 11, leave_detail)
-    set_cell(ws, 18, 11, f"2. Nghỉ không phép:       {unpermitted if unpermitted else 'Ko'}")
+        _merge_range(ws, "K17:L17")
+        set_cell(ws, 17, 11, leave_detail, red=True)
+        ws.cell(17, 11).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        ws.cell(17, 11).font = Font(name=font_name, size=9, color=RED_FONT_COLOR)
+        if len(leave_detail) > 24:
+            need_h = max(18, 13 * math.ceil(len(leave_detail) / 24) + 4)
+            ws.row_dimensions[17].height = max(ws.row_dimensions[17].height or 18, need_h)
+
+    cell_k18 = _anchor_cell(ws, 18, 11)
+    unpermitted_clean = clean_text(str(unpermitted or "Ko")) or "Ko"
+    cell_k18.value = CellRichText(
+        "2. Nghỉ không phép: ",
+        TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=font_name, sz=9), unpermitted_clean)
+    )
+    cell_k18.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     # 3. Mục 1: BAO GÓI SẢN PHẨM (Row 11 to 14)
     packaging_items = _fit_rows(summary_data.get("packaging", []), ROW_LIMITS["packaging"], _merge_packaging)
     for idx, item in enumerate(packaging_items):
         r = 11 + idx
-        set_cell(ws, r, 1, item.get("product_name", ""))
-        set_cell(ws, r, 2, item.get("customer", ""))
-        set_cell(ws, r, 3, item.get("from_val", ""))
-        set_cell(ws, r, 4, item.get("to_val", ""))
+        set_cell(ws, r, 1, item.get("product_name", ""), red=True)
+        set_cell(ws, r, 2, item.get("customer", ""), red=True)
+        set_cell(ws, r, 3, item.get("from_val", ""), red=True)
+        set_cell(ws, r, 4, item.get("to_val", ""), red=True)
         weight_sorted = item.get("weight_sorted")
         weight_waste = item.get("weight_waste")
 
-        set_cell(ws, r, 5, weight_sorted if weight_sorted is not None else "")
-        set_cell(ws, r, 7, weight_waste if weight_waste is not None else "")
+        set_cell(ws, r, 5, weight_sorted if weight_sorted is not None else "", red=True, number_format=NUM_FMT_THOUSANDS)
+        set_cell(ws, r, 7, weight_waste if weight_waste is not None else "", red=True, number_format=NUM_FMT_THOUSANDS)
         if weight_sorted and weight_waste:
-            set_formula(ws, r, 9, f"=G{r}/E{r}*100")
+            set_formula(ws, r, 9, f"=G{r}/E{r}*100", red=True)
+            _anchor_cell(ws, r, 9).number_format = NUM_FMT_PERCENT_2DP
         elif weight_waste == 0:
-            set_cell(ws, r, 9, 0)
-        set_cell(ws, r, 10, item.get("notes", ""))
+            set_cell(ws, r, 9, 0, red=True, number_format=NUM_FMT_PERCENT_2DP)
+        set_cell(ws, r, 10, item.get("notes", ""), red=True)
 
     # Ghi chú thêm bao gói: ghi chú đầu ở hàng 15, các ghi chú còn lại gom vào hàng 16 (không bỏ sót)
     extra_packaging_notes = [n for n in (summary_data.get("packaging_notes") or []) if n]
     if extra_packaging_notes:
-        set_cell(ws, 15, 1, extra_packaging_notes[0])
+        set_cell(ws, 15, 1, extra_packaging_notes[0], red=True)
     rest = extra_packaging_notes[1:]
     if len(rest) == 1:
-        set_cell(ws, 16, 1, rest[0])
+        set_cell(ws, 16, 1, rest[0], red=True)
     elif rest:
-        set_cell(ws, 16, 1, "; ".join(str(note).strip() for note in rest))
+        set_cell(ws, 16, 1, "; ".join(str(note).strip() for note in rest), red=True)
 
     # 4. Mục 2: SỐ LƯỢNG GIỎ BI RA SAU TÔI (Data starts at Row 21 to 24)
     basket_items = _fit_rows(summary_data.get("baskets", []), ROW_LIMITS["baskets"], _merge_baskets)
     for idx, item in enumerate(basket_items):
         r = 21 + idx
-        set_cell(ws, r, 1, item.get("product_name", ""))
-        set_cell(ws, r, 2, item.get("customer", ""))
-        set_cell(ws, r, 3, item.get("from_val", ""))
-        set_cell(ws, r, 4, item.get("to_val", ""))
-        set_cell(ws, r, 5, item.get("steel_grade", ""))
+        set_cell(ws, r, 1, item.get("product_name", ""), red=True)
+        set_cell(ws, r, 2, item.get("customer", ""), red=True)
+        set_cell(ws, r, 3, item.get("from_val", ""), red=True)
+        set_cell(ws, r, 4, item.get("to_val", ""), red=True)
+        set_cell(ws, r, 5, item.get("steel_grade", ""), red=True)
         basket_count = item.get("basket_count")
-        set_cell(ws, r, 7, basket_count if basket_count is not None else "")
+        set_cell(ws, r, 7, basket_count if basket_count is not None else "", red=True)
         total_weight = item.get("total_weight")
         if total_weight is not None:
-            set_cell(ws, r, 9, total_weight)
+            set_cell(ws, r, 9, total_weight, red=True, number_format=NUM_FMT_THOUSANDS)
         elif basket_count:
-            set_formula(ws, r, 9, f"=G{r}*350")
+            set_formula(ws, r, 9, f"=G{r}*350", red=True)
+            _anchor_cell(ws, r, 9).number_format = NUM_FMT_THOUSANDS
 
     # Ghi chú sau tôi (Row 25). Mẫu không có cột ghi chú cho giỏ bi (I:J là ô gộp
     # "Tổng khối lượng"), nên ghi chú từng dòng được gom xuống dòng ghi chú của mục.
@@ -297,41 +396,120 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
             basket_note_parts.append(f"{label}: {notes}" if label else notes)
     extra_basket_notes = "; ".join(part for part in basket_note_parts if part)
     if extra_basket_notes:
-        set_cell(ws, 25, 1, extra_basket_notes)
+        set_cell(ws, 25, 1, extra_basket_notes, red=True)
 
     # 5. Mục 3: SỐ MẺ BI XÓC (Data starts at Row 30 to 35)
-    tumbling_items = _fit_rows(summary_data.get("tumbling", []), ROW_LIMITS["tumbling"], _merge_tumbling)
+    raw_tumbling = list(summary_data.get("tumbling", []))
+    def _tmb_sort_key(r):
+        prod = str(r.get("product_name") or "")
+        parts = [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", prod.strip())]
+        return (
+            1 if not prod or prod == MERGED_ROW_LABEL else 0,
+            parts,
+            str(r.get("customer") or "").lower(),
+            0 if not r.get("notes") else 1,
+            _num(r.get("total_weight")),
+            str(r.get("notes") or "")
+        )
+    raw_tumbling.sort(key=_tmb_sort_key)
+    tumbling_items = _fit_rows(raw_tumbling, ROW_LIMITS["tumbling"], _merge_tumbling)
+
     for idx, item in enumerate(tumbling_items):
         r = 30 + idx
-        set_cell(ws, r, 1, item.get("product_name", ""))
-        set_cell(ws, r, 2, item.get("customer", ""))
+        set_cell(ws, r, 1, item.get("product_name", ""), red=True)
+        set_cell(ws, r, 2, item.get("customer", ""), red=True)
         m1 = item.get("m1")
         m2 = item.get("m2")
-        set_cell(ws, r, 3, m1 if m1 is not None else "")
-        set_cell(ws, r, 5, m2 if m2 is not None else "")
-        set_cell(ws, r, 7, item.get("total_weight", ""))
-        set_cell(ws, r, 9, item.get("notes", ""))
+        set_cell(ws, r, 3, m1 if (m1 is not None and m1 != 0) else "", red=True)
+        set_cell(ws, r, 5, m2 if (m2 is not None and m2 != 0) else "", red=True)
+        set_cell(ws, r, 7, item.get("total_weight", "") if item.get("total_weight") is not None else "", red=True, number_format=NUM_FMT_THOUSANDS)
+        set_cell(ws, r, 9, item.get("notes", ""), red=True)
 
-    # 6. SỰ CỐ TRONG CA (Cột J hàng 28-35)
-    issues_list = summary_data.get("issues", [])
-    if issues_list:
-        issues_text = "\n".join([f" - {iss}" if not iss.strip().startswith("-") else iss for iss in issues_list])
-        set_cell(ws, 28, 10, issues_text)
+    # Gộp ô Tên SP (cột A) và Khách hàng (cột B) của các dòng liền kề có cùng sản phẩm & khách hàng
+    # để cùng sản phẩm (vd: D40) về 1 khối liền nhau, không bị rời rạc
+    i = 0
+    while i < len(tumbling_items):
+        prod = tumbling_items[i].get("product_name", "")
+        cust = tumbling_items[i].get("customer", "")
+        j = i + 1
+        if prod and prod != MERGED_ROW_LABEL:
+            while j < len(tumbling_items) and tumbling_items[j].get("product_name", "") == prod and tumbling_items[j].get("customer", "") == cust:
+                j += 1
+        start_r = 30 + i
+        end_r = 30 + j - 1
+        if end_r > start_r:
+            _merge_range(ws, f"A{start_r}:A{end_r}")
+            _merge_range(ws, f"B{start_r}:B{end_r}")
+            set_cell(ws, start_r, 1, prod, red=True)
+            set_cell(ws, start_r, 2, cust, red=True)
+            ws[f"A{start_r}"].alignment = Alignment(horizontal="center", vertical="center")
+            ws[f"B{start_r}"].alignment = Alignment(horizontal="center", vertical="center")
+        i = j
+
+    # 6. SỰ CỐ TRONG CA (Cột J-L các hàng 28 đến 35: mỗi sự cố chiếm 1 dòng riêng)
+    raw_issues = summary_data.get("issues", [])
+    flat_issues = []
+    for iss in raw_issues:
+        for line in str(iss).split("\n"):
+            line_clean = clean_text(line).strip()
+            if line_clean:
+                if not line_clean.startswith("-"):
+                    line_clean = f"- {line_clean}"
+                elif not line_clean.startswith("- "):
+                    line_clean = f"- {line_clean.lstrip('- ')}"
+                flat_issues.append(line_clean)
+
+    MAX_ISSUE_ROWS = 8  # Hàng 28 đến 35 (mỗi dòng tương ứng 1 hàng gộp J:L)
+    # Chiều rộng gộp J+K+L ≈ 35 ký tự; dùng cỡ chữ 9 để chứa được nhiều hơn (~42 ký tự/dòng)
+    ISSUE_FONT_SIZE = 9
+    ISSUE_CHARS_PER_LINE = 42  # ước lượng số ký tự trên 1 dòng ở cỡ 9
+    ISSUE_LINE_HEIGHT = 13     # chiều cao (pt) mỗi dòng văn bản ở cỡ 9
+    ISSUE_MIN_ROW_HEIGHT = 18  # chiều cao tối thiểu của dòng (pt)
+
+    for offset in range(MAX_ISSUE_ROWS):
+        r = 28 + offset
+        _merge_range(ws, f"J{r}:L{r}")
+        if offset < len(flat_issues):
+            if offset == MAX_ISSUE_ROWS - 1 and len(flat_issues) > MAX_ISSUE_ROWS:
+                # Nếu vượt quá 8 sự cố, dòng cuối cùng ghép các sự cố còn lại
+                val = "; ".join(flat_issues[offset:])
+            else:
+                val = flat_issues[offset]
+            set_cell(ws, r, 10, val, red=True)
+            # Tính số dòng wrap và đặt chiều cao phù hợp
+            num_lines = max(1, math.ceil(len(val) / ISSUE_CHARS_PER_LINE))
+            needed_height = max(ISSUE_MIN_ROW_HEIGHT, ISSUE_LINE_HEIGHT * num_lines + 4)
+            current_h = ws.row_dimensions[r].height or ISSUE_MIN_ROW_HEIGHT
+            ws.row_dimensions[r].height = max(current_h, needed_height)
+        else:
+            set_cell(ws, r, 10, None)
+        cell_j = ws.cell(r, 10)
+        cell_j.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+        cell_j.font = Font(name="Times New Roman", size=ISSUE_FONT_SIZE, color=RED_FONT_COLOR)
 
     # 7. Yêu cầu - Đề xuất: tiêu đề ở hàng 36, nội dung ngay hàng dưới (A37:H37)
     suggestions = summary_data.get("suggestions", "KO")
     suggestions = clean_text(str(suggestions)) if suggestions else "KO"
     _merge_range(ws, "A37:H37")
-    set_cell(ws, 37, 1, suggestions)
+    set_cell(ws, 37, 1, suggestions, red=True)
     ws["A37"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     lines = math.ceil(len(suggestions) / 70) if suggestions else 1
     if lines > 1:
         ws.row_dimensions[37].height = max(ws.row_dimensions[37].height or 15, 15 * lines)
 
     # 8. Thời gian làm việc các ca: thay hẳn 2 nhãn mẫu ở I37/I38, 3 dòng liền nhau ngay dưới tiêu đề
+    SHIFT_TIME_DATA = (
+        ("Thời gian làm việc của Ca 1 từ :   ", "6h - 14h "),
+        ("Thời gian làm việc của Ca 2 từ :  ", "14h - 22h "),
+        ("Thời gian làm việc của Ca 3 từ :  ", "22h - 6h "),
+    )
     _merge_range(ws, "I39:L39")
-    for offset, line in enumerate(SHIFT_TIME_LINES):
-        set_cell(ws, 37 + offset, 9, line)
+    for offset, (label, t_val) in enumerate(SHIFT_TIME_DATA):
+        r = 37 + offset
+        c_cell = _anchor_cell(ws, r, 9)
+        fn = c_cell.font.name if c_cell.font else "Times New Roman"
+        sz_time = c_cell.font.size if c_cell.font else 11
+        c_cell.value = CellRichText(label, TextBlock(InlineFont(color=RED_FONT_COLOR, rFont=fn, sz=sz_time), t_val))
     ws["I39"].alignment = copy(ws["I38"].alignment)
 
     # 9. Người báo cáo
@@ -349,6 +527,9 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 1
     ws.page_margins = PageMargins(left=0.7, right=0.7, top=0.75, bottom=0.75, header=0.3, footer=0.3)
+
+    # 11. Chèn chữ ký GĐ Nhà máy mặc định và logo
+    _attach_default_images(ws)
 
     created_temp = False
     if not output_path:
@@ -723,10 +904,18 @@ def _read_day_sheet(day_path: str):
         sst_rel = next((r for r in wb_rels if r["type"].endswith("/sharedStrings")), None)
         if sst_rel and sst_rel["part"] in names:
             shared = list(ET.fromstring(z.read(sst_rel["part"])).findall(_q("si")))
+        sheet_root = ET.fromstring(z.read(sheet_part))
+        # Bỏ phần tử <drawing> mà openpyxl tạo trong sheet ngày tạm;
+        # khi tiêm vào master, injector sẽ tự gắn drawing riêng của master.
+        for dw in list(sheet_root.findall(_q("drawing"))):
+            sheet_root.remove(dw)
+
         sheet_rels = _rels_part_name(sheet_part)
-        if sheet_rels in names and _parse_rels(z.read(sheet_rels), sheet_part):
-            raise RuntimeError("Sheet mẫu có quan hệ (ảnh/ghi chú/liên kết) chưa được hỗ trợ khi đồng bộ")
-        return ET.fromstring(z.read(sheet_part)), z.read(styles_part), shared
+        if sheet_rels in names:
+            other_rels = [r for r in _parse_rels(z.read(sheet_rels), sheet_part) if r["type"] != _RT_DRAWING]
+            if other_rels:
+                raise RuntimeError("Sheet mẫu có quan hệ (chưa được hỗ trợ) khi đồng bộ")
+        return sheet_root, z.read(styles_part), shared
 
 
 def _used_style_indexes(sheet_root) -> set:

@@ -5,6 +5,7 @@ Provides REST APIs for shift report entry, auto-aggregation across shifts, and E
 import logging
 import os
 import re
+import shutil
 import sqlite3
 import tempfile
 import unicodedata
@@ -180,6 +181,7 @@ FIELD_LABELS = {
     "staff_total": "Tổng sĩ số", "staff_present": "Có mặt",
     "leave_permitted": "Nghỉ có phép", "leave_unpermitted": "Nghỉ không phép",
     "leave_permitted_names": "Tên người nghỉ phép", "leave_unpermitted_names": "Tên người nghỉ không phép",
+    "leave_rotating": "Nghỉ luân phiên", "leave_rotating_names": "Tên người nghỉ luân phiên",
     "issues": "Sự cố", "suggestions": "Đề xuất", "start_time": "Giờ bắt đầu", "end_time": "Giờ kết thúc",
     "packaging": "Bao gói", "baskets": "Giỏ bi", "tumbling": "Bi xóc",
     "product_name": "Tên sản phẩm", "customer": "Khách hàng", "steel_grade": "Mác thép",
@@ -188,6 +190,8 @@ FIELD_LABELS = {
     "total_weight": "Tổng khối lượng", "m1": "Máy xóc 1", "m2": "Máy xóc 2", "notes": "Ghi chú",
     "username": "Tên đăng nhập", "password": "Mật khẩu", "full_name": "Họ tên", "role": "Vai trò",
     "current_password": "Mật khẩu hiện tại", "new_password": "Mật khẩu mới", "date": "Ngày",
+    "category": "Danh mục", "name": "Tên", "sort_order": "Thứ tự", "active": "Trạng thái",
+    "start_date": "Ngày bắt đầu", "end_date": "Ngày kết thúc",
 }
 
 
@@ -346,10 +350,13 @@ class ShiftReportModel(BaseModel):
     staff_present: StaffNum = 5
     leave_permitted: StaffNum = 0
     leave_permitted_names: Optional[NamesListText] = ""
+    leave_rotating: StaffNum = 0
+    leave_rotating_names: Optional[NamesListText] = ""
     leave_unpermitted: StaffNum = 0
     leave_unpermitted_names: Optional[NamesListText] = ""
     issues: Optional[LongText] = ""
     suggestions: Optional[LongText] = ""
+    shift_tasks: Optional[LongText] = ""
     start_time: Optional[NameText] = ""
     end_time: Optional[NameText] = ""
     packaging: List[PackagingItemModel] = []
@@ -374,10 +381,10 @@ class ShiftReportModel(BaseModel):
             raise ValueError(
                 f"Số người có mặt ({self.staff_present}) không được lớn hơn tổng sĩ số ({self.staff_total})"
             )
-        on_leave = self.leave_permitted + self.leave_unpermitted
+        on_leave = self.leave_permitted + self.leave_rotating + self.leave_unpermitted
         if on_leave > self.staff_total:
             raise ValueError(
-                f"Tổng số người nghỉ (có phép + không phép = {on_leave}) "
+                f"Tổng số người nghỉ (có phép + luân phiên + không phép = {on_leave}) "
                 f"không được lớn hơn tổng sĩ số ({self.staff_total})"
             )
         return self
@@ -403,6 +410,18 @@ class UserCreateModel(BaseModel):
 class UserUpdateModel(BaseModel):
     full_name: Optional[NameText] = None
     password: Optional[PasswordText] = None
+    active: Optional[bool] = None
+
+
+class PresetCreateModel(BaseModel):
+    category: Literal["product", "customer", "steel_grade"]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    sort_order: Optional[int] = 0
+
+
+class PresetUpdateModel(BaseModel):
+    name: Optional[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]] = None
+    sort_order: Optional[int] = None
     active: Optional[bool] = None
 
 
@@ -597,20 +616,132 @@ def update_user(
     return {"status": "success"}
 
 
-# ---------------- SHIFT REPORT ROUTES ----------------
+# ---------------- PRESETS & MASTER DATA ----------------
 
 @app.get("/api/presets")
 def get_presets(user: dict = Depends(auth.require_user)):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT category, name FROM presets WHERE active = 1 ORDER BY sort_order ASC, id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    products = [r["name"] for r in rows if r["category"] == "product"]
+    customers = [r["name"] for r in rows if r["category"] == "customer"]
+    steel_grades = [r["name"] for r in rows if r["category"] == "steel_grade"]
+
+    if not products:
+        products = ["D25", "D40", "D60", "D80"]
+    if not customers:
+        customers = ["Molycop", "Nhập TQ", "Khô dầu", "VICO"]
+    if not steel_grades:
+        steel_grades = ["CR18", "18", "CR20", "B2"]
+
     return {
-        "products": ["D25", "D40", "D60", "D80"],
-        "customers": ["Molycop", "Nhập TQ", "Khô dầu", "VICO"],
-        "steel_grades": ["CR18", "18", "CR20", "B2"],
+        "products": products,
+        "customers": customers,
+        "steel_grades": steel_grades,
         "shift_hours": {
             1: {"start": "6h", "end": "14h"},
             2: {"start": "14h", "end": "22h"},
             3: {"start": "22h", "end": "6h"}
         }
     }
+
+
+@app.get("/api/admin/presets")
+def list_admin_presets(admin: dict = Depends(auth.require_admin)):
+    conn = db.get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, category, name, sort_order, active, created_at "
+        "FROM presets ORDER BY category, sort_order ASC, id ASC"
+    )
+    items = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return items
+
+
+@app.post("/api/admin/presets")
+def create_preset(payload: PresetCreateModel, admin: dict = Depends(auth.require_admin)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Tên không được để trống")
+    conn = db.get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO presets (category, name, sort_order, active, created_at) VALUES (?, ?, ?, 1, ?)",
+            (payload.category, name, payload.sort_order or 0, now_str()),
+        )
+        conn.commit()
+        preset_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Mục '{name}' đã có trong danh mục này.")
+    finally:
+        conn.close()
+    return {"status": "success", "id": preset_id}
+
+
+@app.patch("/api/admin/presets/{preset_id}")
+def update_preset(
+    payload: PresetUpdateModel,
+    preset_id: int = PathParam(..., ge=1, le=MAX_SQLITE_ID),
+    admin: dict = Depends(auth.require_admin),
+):
+    conn = db.get_db()
+    try:
+        row = conn.execute("SELECT id, category, name FROM presets WHERE id = ?", (preset_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy mục danh mục")
+
+        updates = []
+        params = []
+        if payload.name is not None:
+            new_name = payload.name.strip()
+            if not new_name:
+                raise HTTPException(status_code=400, detail="Tên không được để trống")
+            updates.append("name = ?")
+            params.append(new_name)
+        if payload.sort_order is not None:
+            updates.append("sort_order = ?")
+            params.append(payload.sort_order)
+        if payload.active is not None:
+            updates.append("active = ?")
+            params.append(int(payload.active))
+
+        if updates:
+            params.append(preset_id)
+            conn.execute(f"UPDATE presets SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="Tên này đã tồn tại trong danh mục")
+    finally:
+        conn.close()
+    return {"status": "success"}
+
+
+@app.delete("/api/admin/presets/{preset_id}")
+def delete_preset(
+    preset_id: int = PathParam(..., ge=1, le=MAX_SQLITE_ID),
+    admin: dict = Depends(auth.require_admin),
+):
+    conn = db.get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM presets WHERE id = ?", (preset_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Không tìm thấy mục danh mục để xóa")
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "success"}
+
+
+# ---------------- SHIFT REPORT ROUTES ----------------
 
 
 def _has_content(numbers, notes) -> bool:
@@ -653,15 +784,17 @@ def save_shift_report(report: ShiftReportModel, user: dict = Depends(auth.requir
             UPDATE shifts SET
                 safety_production = ?, safety_ppe = ?, safety_equip = ?,
                 staff_total = ?, staff_present = ?, leave_permitted = ?,
-                leave_permitted_names = ?, leave_unpermitted = ?, leave_unpermitted_names = ?,
-                issues = ?, suggestions = ?, start_time = ?, end_time = ?,
+                leave_permitted_names = ?, leave_rotating = ?, leave_rotating_names = ?,
+                leave_unpermitted = ?, leave_unpermitted_names = ?,
+                issues = ?, suggestions = ?, shift_tasks = ?, start_time = ?, end_time = ?,
                 updated_at = ?, updated_by_user_id = ?
             WHERE id = ?
             """, (
                 int(report.safety_production), int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
-                report.leave_permitted_names, report.leave_unpermitted, report.leave_unpermitted_names,
-                report.issues, report.suggestions, report.start_time, report.end_time,
+                report.leave_permitted_names, report.leave_rotating, report.leave_rotating_names,
+                report.leave_unpermitted, report.leave_unpermitted_names,
+                report.issues, report.suggestions, report.shift_tasks, report.start_time, report.end_time,
                 timestamp, user["id"],
                 shift_id
             ))
@@ -676,15 +809,17 @@ def save_shift_report(report: ShiftReportModel, user: dict = Depends(auth.requir
             INSERT INTO shifts (
                 report_date, shift_num, shift_leader, safety_production, safety_ppe, safety_equip,
                 staff_total, staff_present, leave_permitted, leave_permitted_names,
-                leave_unpermitted, leave_unpermitted_names, issues, suggestions,
+                leave_rotating, leave_rotating_names,
+                leave_unpermitted, leave_unpermitted_names, issues, suggestions, shift_tasks,
                 start_time, end_time, created_at, created_by_user_id, updated_by_user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 report.report_date, report.shift_num, user["full_name"],
                 int(report.safety_production), int(report.safety_ppe), int(report.safety_equip),
                 report.staff_total, report.staff_present, report.leave_permitted,
-                report.leave_permitted_names, report.leave_unpermitted,
-                report.leave_unpermitted_names, report.issues, report.suggestions,
+                report.leave_permitted_names, report.leave_rotating, report.leave_rotating_names,
+                report.leave_unpermitted, report.leave_unpermitted_names,
+                report.issues, report.suggestions, report.shift_tasks,
                 report.start_time, report.end_time, timestamp, user["id"], user["id"]
             ))
             shift_id = cursor.lastrowid
@@ -891,6 +1026,13 @@ def _empty_safety() -> dict:
     return {"production_failed_shifts": [], "ppe_failed_shifts": [], "equip_failed_shifts": []}
 
 
+def natural_sort_key(s: str) -> list:
+    """Tách chuỗi thành chữ và số để sắp xếp tự nhiên: D25 < D40 < D90 < D100."""
+    if not s:
+        return []
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r"(\d+)", s.strip())]
+
+
 def compute_daily_summary(report_date: str) -> dict:
     conn = db.get_db()
     cursor = conn.cursor()
@@ -907,7 +1049,12 @@ def compute_daily_summary(report_date: str) -> dict:
             "tumbling": [],
             "issues": [],
             "suggestions": "KO",
-            "attendance": {"total_staff": 15, "present": 0, "leave_notes": "Ko", "leave_detail": "", "unpermitted": "Ko"},
+            "attendance": {
+                "total_staff": 15, "present": 0,
+                "leave_permitted": 0, "leave_notes": "Ko",
+                "leave_rotating": 0, "rotating_notes": "Ko",
+                "leave_detail": "", "leave_unpermitted": 0, "unpermitted": "Ko"
+            },
             "safety": _empty_safety(),
         }
 
@@ -919,15 +1066,31 @@ def compute_daily_summary(report_date: str) -> dict:
     total_present = sum((s["staff_present"] or 0) for s in shifts)
 
     leave_names_list = []
+    rotating_names_list = []
     unpermitted_names_list = []
     for s in shifts:
         if s["leave_permitted_names"]:
             leave_names_list.append(f"Ca {s['shift_num']}: {s['leave_permitted_names']}")
+        if s.get("leave_rotating_names"):
+            rotating_names_list.append(f"Ca {s['shift_num']}: {s['leave_rotating_names']}")
         if s["leave_unpermitted_names"]:
             unpermitted_names_list.append(f"Ca {s['shift_num']}: {s['leave_unpermitted_names']}")
 
     leave_notes = "Ko" if not leave_names_list else "; ".join(leave_names_list)
+    rotating_notes = "Ko" if not rotating_names_list else "; ".join(rotating_names_list)
     unpermitted = "Ko" if not unpermitted_names_list else "; ".join(unpermitted_names_list)
+
+    total_rotating = sum((s.get("leave_rotating") or 0) for s in shifts)
+    total_permitted = sum((s.get("leave_permitted") or 0) for s in shifts)
+    total_unpermitted = sum((s.get("leave_unpermitted") or 0) for s in shifts)
+    total_absent = max(0, total_staff - total_present)
+
+    if total_rotating > 0:
+        leave_detail = f"{total_rotating} người nghỉ luân phiên"
+    elif total_absent > 0:
+        leave_detail = f"{total_absent} người nghỉ"
+    else:
+        leave_detail = ""
 
     safety = {
         "production_failed_shifts": [s["shift_num"] for s in shifts if s.get("safety_production") is not None and not s["safety_production"]],
@@ -964,6 +1127,16 @@ def compute_daily_summary(report_date: str) -> dict:
             "notes": item_notes
         })
 
+    # Gom "công việc xử lý trong ca" từ tất cả các ca vào đầu danh sách ghi chú bao gói
+    shift_tasks_notes = []
+    for s in shifts:
+        tasks = (s.get("shift_tasks") or "").strip()
+        if tasks and tasks.upper() != "KO":
+            lines = [l.strip() for l in tasks.split("\n") if l.strip()]
+            shift_tasks_notes.extend(lines)
+    if shift_tasks_notes:
+        packaging_notes = shift_tasks_notes + packaging_notes
+
     # Dòng không nhập khối lượng (NULL) tính theo 350 Kg/giỏ; khối lượng 0 được giữ nguyên là 0
     cursor.execute(f"""
         SELECT product_name, customer, steel_grade,
@@ -995,7 +1168,6 @@ def compute_daily_summary(report_date: str) -> dict:
         FROM tumbling_items
         WHERE shift_id IN ({placeholders})
         GROUP BY product_name, customer, notes_key
-        ORDER BY sum_weight DESC
     """, shift_ids)
 
     tumbling_rows = []
@@ -1008,6 +1180,16 @@ def compute_daily_summary(report_date: str) -> dict:
             "total_weight": r["sum_weight"] or 0,
             "notes": r["notes_key"] or ""
         })
+
+    # Sắp xếp để cùng sản phẩm (vd: D40) và khách hàng luôn về 1 khối liền nhau, không bị rời rạc
+    tumbling_rows.sort(key=lambda r: (
+        1 if not r["product_name"] or r["product_name"] == "Khác" else 0,
+        natural_sort_key(r["product_name"]),
+        (r["customer"] or "").lower(),
+        0 if not r["notes"] else 1,
+        r["total_weight"],
+        r["notes"]
+    ))
 
     issues_list = []
     for s in shifts:
@@ -1032,8 +1214,12 @@ def compute_daily_summary(report_date: str) -> dict:
         "attendance": {
             "total_staff": total_staff,
             "present": total_present,
+            "leave_permitted": total_permitted,
             "leave_notes": leave_notes,
-            "leave_detail": f"{total_staff - total_present} người nghỉ" if (total_staff - total_present) > 0 else "",
+            "leave_rotating": total_rotating,
+            "rotating_notes": rotating_notes,
+            "leave_detail": leave_detail,
+            "leave_unpermitted": total_unpermitted,
             "unpermitted": unpermitted
         },
         "packaging": packaging_rows,
@@ -1140,6 +1326,359 @@ def get_history(admin: dict = Depends(auth.require_admin)):
         }
         for d, items in grouped.items()
     ]
+
+
+# ---------------- PERIOD SUMMARY & ANALYTICS ----------------
+
+@app.get("/api/period-summary")
+def get_period_summary(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    user: dict = Depends(auth.require_user),
+):
+    start_parsed = _parse_date_str(start_date)
+    end_parsed = _parse_date_str(end_date)
+    if start_parsed > end_parsed:
+        raise HTTPException(status_code=400, detail="Ngày bắt đầu không được lớn hơn ngày kết thúc")
+    if (end_parsed - start_parsed).days > 366:
+        raise HTTPException(status_code=400, detail="Khoảng thời gian tra cứu tối đa là 366 ngày")
+
+    conn = db.get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, report_date, shift_num, shift_leader,
+                   staff_total, staff_present, leave_permitted, leave_rotating, leave_unpermitted
+            FROM shifts
+            WHERE report_date >= ? AND report_date <= ?
+            ORDER BY report_date ASC, shift_num ASC
+        """, (start_date, end_date))
+        shifts = [dict(r) for r in cursor.fetchall()]
+
+        shift_ids = [s["id"] for s in shifts]
+        total_shifts = len(shifts)
+        unique_dates = sorted(list(set(s["report_date"] for s in shifts)))
+        total_days = len(unique_dates)
+
+        total_staff_sum = sum(s["staff_total"] or 0 for s in shifts)
+        total_present_sum = sum(s["staff_present"] or 0 for s in shifts)
+        total_leave_permitted = sum(s["leave_permitted"] or 0 for s in shifts)
+        total_leave_rotating = sum(s.get("leave_rotating") or 0 for s in shifts)
+        total_leave_unpermitted = sum(s["leave_unpermitted"] or 0 for s in shifts)
+
+        attendance = {
+            "total_shifts": total_shifts,
+            "total_days": total_days,
+            "total_staff_man_shifts": total_staff_sum,
+            "total_present_man_shifts": total_present_sum,
+            "attendance_rate": round((total_present_sum / total_staff_sum * 100), 1) if total_staff_sum > 0 else 0,
+            "total_leave_permitted": total_leave_permitted,
+            "total_leave_rotating": total_leave_rotating,
+            "total_leave_unpermitted": total_leave_unpermitted,
+        }
+
+        if not shift_ids:
+            cur_dt = start_parsed
+            empty_series = []
+            if (end_parsed - start_parsed).days <= 90:
+                while cur_dt <= end_parsed:
+                    empty_series.append({
+                        "date": cur_dt.strftime("%Y-%m-%d"),
+                        "sorted_weight": 0,
+                        "waste_weight": 0,
+                        "waste_rate": None,
+                        "basket_count": 0,
+                        "basket_weight": 0,
+                        "shift_count": 0,
+                    })
+                    cur_dt += timedelta(days=1)
+            return {
+                "start_date": start_date,
+                "end_date": end_date,
+                "attendance": attendance,
+                "packaging": {"total_sorted": 0, "total_waste": 0, "waste_rate": 0, "by_product": [], "by_customer": []},
+                "baskets": {"total_baskets": 0, "total_weight": 0, "by_product": [], "by_steel": []},
+                "tumbling": {"total_m1": 0, "total_m2": 0, "total_batches": 0, "total_weight": 0, "by_product": []},
+                "by_shift": {"shift_1": 0, "shift_2": 0, "shift_3": 0},
+                "daily_series": empty_series,
+            }
+
+        placeholders = ",".join("?" for _ in shift_ids)
+
+        # 1. Packaging aggregation
+        cursor.execute(f"""
+            SELECT p.shift_id, s.report_date, s.shift_num,
+                   p.product_name, p.customer, p.weight_sorted, p.weight_waste
+            FROM packaging_items p
+            JOIN shifts s ON p.shift_id = s.id
+            WHERE p.shift_id IN ({placeholders})
+        """, shift_ids)
+        pkg_items = [dict(r) for r in cursor.fetchall()]
+
+        total_sorted = sum(r["weight_sorted"] or 0 for r in pkg_items)
+        total_waste = sum(r["weight_waste"] or 0 for r in pkg_items)
+        overall_waste_rate = round((total_waste / total_sorted * 100), 2) if total_sorted > 0 else 0
+
+        cursor.execute(f"""
+            SELECT product_name,
+                   SUM(weight_sorted) as sum_sorted,
+                   SUM(weight_waste) as sum_waste
+            FROM packaging_items
+            WHERE shift_id IN ({placeholders})
+            GROUP BY product_name
+            ORDER BY sum_sorted DESC
+        """, shift_ids)
+        pkg_by_product = []
+        for r in cursor.fetchall():
+            s_val = r["sum_sorted"] or 0
+            w_val = r["sum_waste"] or 0
+            rate = round((w_val / s_val * 100), 2) if s_val > 0 else 0
+            pkg_by_product.append({
+                "product_name": r["product_name"] or "Khác",
+                "sorted_weight": s_val,
+                "waste_weight": w_val,
+                "waste_rate": rate,
+            })
+
+        cursor.execute(f"""
+            SELECT customer,
+                   SUM(weight_sorted) as sum_sorted,
+                   SUM(weight_waste) as sum_waste
+            FROM packaging_items
+            WHERE shift_id IN ({placeholders})
+            GROUP BY customer
+            ORDER BY sum_sorted DESC
+        """, shift_ids)
+        pkg_by_customer = [
+            {
+                "customer": r["customer"] or "Khác",
+                "sorted_weight": r["sum_sorted"] or 0,
+                "waste_weight": r["sum_waste"] or 0,
+            }
+            for r in cursor.fetchall()
+        ]
+
+        # 2. Baskets aggregation
+        cursor.execute(f"""
+            SELECT product_name,
+                   SUM(basket_count) as sum_baskets,
+                   SUM(COALESCE(total_weight, basket_count * 350)) as sum_weight
+            FROM basket_items
+            WHERE shift_id IN ({placeholders})
+            GROUP BY product_name
+            ORDER BY sum_weight DESC
+        """, shift_ids)
+        baskets_by_product = [
+            {
+                "product_name": r["product_name"] or "Khác",
+                "basket_count": r["sum_baskets"] or 0,
+                "total_weight": r["sum_weight"] or 0,
+            }
+            for r in cursor.fetchall()
+        ]
+
+        cursor.execute(f"""
+            SELECT steel_grade,
+                   SUM(basket_count) as sum_baskets,
+                   SUM(COALESCE(total_weight, basket_count * 350)) as sum_weight
+            FROM basket_items
+            WHERE shift_id IN ({placeholders})
+            GROUP BY steel_grade
+            ORDER BY sum_weight DESC
+        """, shift_ids)
+        baskets_by_steel = [
+            {
+                "steel_grade": r["steel_grade"] or "Khác",
+                "basket_count": r["sum_baskets"] or 0,
+                "total_weight": r["sum_weight"] or 0,
+            }
+            for r in cursor.fetchall()
+        ]
+        total_baskets = sum(r["basket_count"] for r in baskets_by_product)
+        total_basket_weight = sum(r["total_weight"] for r in baskets_by_product)
+
+        # 3. Tumbling aggregation
+        cursor.execute(f"""
+            SELECT product_name,
+                   SUM(m1) as sum_m1,
+                   SUM(m2) as sum_m2,
+                   SUM(COALESCE(m1, 0) + COALESCE(m2, 0)) as sum_batches,
+                   SUM(total_weight) as sum_weight
+            FROM tumbling_items
+            WHERE shift_id IN ({placeholders})
+            GROUP BY product_name
+            ORDER BY sum_weight DESC
+        """, shift_ids)
+        tumbling_by_product = [
+            {
+                "product_name": r["product_name"] or "Khác",
+                "m1": r["sum_m1"] or 0,
+                "m2": r["sum_m2"] or 0,
+                "batches": r["sum_batches"] or 0,
+                "total_weight": r["sum_weight"] or 0,
+            }
+            for r in cursor.fetchall()
+        ]
+        total_m1 = sum(r["m1"] for r in tumbling_by_product)
+        total_m2 = sum(r["m2"] for r in tumbling_by_product)
+        total_batches = total_m1 + total_m2
+        total_tumbling_weight = sum(r["total_weight"] for r in tumbling_by_product)
+
+        # 4. Productivity by shift
+        shift_prod = {1: 0, 2: 0, 3: 0}
+        for r in pkg_items:
+            s_num = r.get("shift_num")
+            if s_num in shift_prod:
+                shift_prod[s_num] += (r["weight_sorted"] or 0)
+
+        # 5. Daily series: sinh chuỗi ngày liên tục trong khoảng (nếu <= 90 ngày) để biểu đồ hiển thị đúng dòng thời gian
+        if (end_parsed - start_parsed).days <= 90:
+            cur_dt = start_parsed
+            all_dates = []
+            while cur_dt <= end_parsed:
+                all_dates.append(cur_dt.strftime("%Y-%m-%d"))
+                cur_dt += timedelta(days=1)
+        else:
+            all_dates = unique_dates
+
+        daily_map = {
+            d: {
+                "date": d,
+                "sorted_weight": 0,
+                "waste_weight": 0,
+                "basket_count": 0,
+                "basket_weight": 0,
+                "shift_count": 0,
+            }
+            for d in all_dates
+        }
+        for s in shifts:
+            d = s["report_date"]
+            if d in daily_map:
+                daily_map[d]["shift_count"] += 1
+        for r in pkg_items:
+            d = r["report_date"]
+            if d in daily_map:
+                daily_map[d]["sorted_weight"] += (r["weight_sorted"] or 0)
+                daily_map[d]["waste_weight"] += (r["weight_waste"] or 0)
+
+        cursor.execute(f"""
+            SELECT s.report_date,
+                   SUM(b.basket_count) as sum_baskets,
+                   SUM(COALESCE(b.total_weight, b.basket_count * 350)) as sum_weight
+            FROM basket_items b
+            JOIN shifts s ON b.shift_id = s.id
+            WHERE b.shift_id IN ({placeholders})
+            GROUP BY s.report_date
+        """, shift_ids)
+        for r in cursor.fetchall():
+            d = r["report_date"]
+            if d in daily_map:
+                daily_map[d]["basket_count"] = r["sum_baskets"] or 0
+                daily_map[d]["basket_weight"] = r["sum_weight"] or 0
+
+        daily_series = []
+        for d in all_dates:
+            item = daily_map[d]
+            sw = item["sorted_weight"]
+            ww = item["waste_weight"]
+            if item["shift_count"] > 0:
+                rate = round((ww / sw * 100), 2) if sw > 0 else 0.0
+            else:
+                rate = None
+            daily_series.append({
+                "date": d,
+                "sorted_weight": sw,
+                "waste_weight": ww,
+                "waste_rate": rate,
+                "basket_count": item["basket_count"],
+                "basket_weight": item["basket_weight"],
+                "shift_count": item["shift_count"],
+            })
+
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "attendance": attendance,
+            "packaging": {
+                "total_sorted": total_sorted,
+                "total_waste": total_waste,
+                "waste_rate": overall_waste_rate,
+                "by_product": pkg_by_product,
+                "by_customer": pkg_by_customer,
+            },
+            "baskets": {
+                "total_baskets": total_baskets,
+                "total_weight": total_basket_weight,
+                "by_product": baskets_by_product,
+                "by_steel": baskets_by_steel,
+            },
+            "tumbling": {
+                "total_m1": total_m1,
+                "total_m2": total_m2,
+                "total_batches": total_batches,
+                "total_weight": total_tumbling_weight,
+                "by_product": tumbling_by_product,
+            },
+            "by_shift": {
+                "shift_1": shift_prod[1],
+                "shift_2": shift_prod[2],
+                "shift_3": shift_prod[3],
+            },
+            "daily_series": daily_series,
+        }
+    finally:
+        conn.close()
+
+
+# ---------------- ADMIN: BACKUP & MASTER DOWNLOAD ----------------
+
+@app.get("/api/admin/backup-db")
+def backup_database(admin: dict = Depends(auth.require_admin)):
+    """Tạo bản sao lưu SQLite snapshot đồng nhất an toàn bằng sqlite3.backup()."""
+    source_conn = db.get_db()
+    fd, tmp_path = tempfile.mkstemp(prefix="vico_backup_", suffix=".db")
+    os.close(fd)
+    try:
+        target_conn = sqlite3.connect(tmp_path)
+        source_conn.backup(target_conn)
+        target_conn.close()
+    finally:
+        source_conn.close()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return FileResponse(
+        path=tmp_path,
+        filename=f"vico_production_backup_{timestamp}.db",
+        media_type="application/x-sqlite3",
+        background=BackgroundTask(_remove_quietly, tmp_path),
+    )
+
+
+@app.get("/api/admin/download-master-excel")
+def download_master_excel(admin: dict = Depends(auth.require_admin)):
+    """Tải trực tiếp file Excel tổng hợp gốc (Master) từ máy chủ."""
+    master_path = excel_service.get_master_path()
+    if not os.path.exists(master_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy file Excel tổng hợp gốc (BÁO CÁO TỔNG HỢP HÀNG NGÀY.xlsx) trên máy chủ.",
+        )
+    fd, tmp_path = tempfile.mkstemp(prefix="vico_master_dl_", suffix=".xlsx")
+    os.close(fd)
+    try:
+        shutil.copyfile(master_path, tmp_path)
+    except Exception:
+        _remove_quietly(tmp_path)
+        logger.exception("Lỗi khi sao chép file master để tải về")
+        raise HTTPException(status_code=500, detail="Không thể chuẩn bị file Excel để tải về.")
+
+    return FileResponse(
+        path=tmp_path,
+        filename="BAO_CAO_TONG_HOP_HANG_NGAY.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=BackgroundTask(_remove_quietly, tmp_path),
+    )
 
 
 # Mount static files

@@ -129,3 +129,59 @@ def test_summary_safety_key_present_when_all_ok_and_for_empty_day(client):
         "ppe_failed_shifts": [],
         "equip_failed_shifts": [],
     }
+
+
+def test_summary_aggregates_rotating_leaves(client):
+    login_admin(client)
+    _post(client, 1, staff_total=5, staff_present=3, leave_permitted=1, leave_permitted_names="Bắc",
+          leave_rotating=1, leave_rotating_names="Hợi")
+    _post(client, 2, staff_total=5, staff_present=4, leave_rotating=1, leave_rotating_names="Đồng")
+    summary = _summary(client)
+    att = summary["attendance"]
+    assert att["total_staff"] == 10
+    assert att["present"] == 7
+    assert att["leave_permitted"] == 1
+    assert att["leave_notes"] == "Ca 1: Bắc"
+    assert att["leave_rotating"] == 2
+    assert att["rotating_notes"] == "Ca 1: Hợi; Ca 2: Đồng"
+    assert att["leave_detail"] == "2 người nghỉ luân phiên"
+
+
+def test_tumbling_items_grouped_together_and_sorted_naturally(client):
+    login_admin(client)
+    # Ca 1 nhập D25 và D90
+    _post(client, 1, tumbling=[
+        {"product_name": "D25", "customer": "Molycop", "m1": 0, "m2": 3, "total_weight": 4500, "notes": ""},
+        {"product_name": "D90", "customer": "Molycop", "m1": 3, "m2": 0, "total_weight": 9000, "notes": "Sạch cát"},
+    ])
+    # Ca 2 nhập D40 với ghi chú 'Khô dầu' (khối lượng lớn)
+    _post(client, 2, tumbling=[
+        {"product_name": "D40", "customer": "Molycop", "m1": 1, "m2": 0, "total_weight": 3500, "notes": "Khô dầu"},
+    ])
+    # Ca 3 nhập thêm D40 không ghi chú và D40 'Khô dầu'
+    _post(client, 3, tumbling=[
+        {"product_name": "D40", "customer": "Molycop", "m1": 0, "m2": 1, "total_weight": 3000, "notes": ""},
+        {"product_name": "D40", "customer": "Molycop", "m1": 4, "m2": 0, "total_weight": 12000, "notes": "Khô dầu"},
+    ])
+
+    summary = _summary(client)
+    tmb = summary["tumbling"]
+
+    # Kỳ vọng: D25 đứng trước, toàn bộ các dòng D40 nằm liền nhau, sau đó tới D90
+    # Không bị rời rạc bởi việc sắp xếp theo khối lượng từng dòng
+    product_seq = [r["product_name"] for r in tmb]
+    assert product_seq[0] == "D25"
+    assert product_seq[1] == "D40"
+    assert product_seq[2] == "D40"
+    assert product_seq[3] == "D90"
+
+    # D40 không ghi chú xếp trước, D40 'Khô dầu' đã cộng dồn (3500 + 12000 = 15500)
+    assert tmb[1]["product_name"] == "D40"
+    assert tmb[1]["notes"] == ""
+    assert tmb[1]["total_weight"] == 3000
+
+    assert tmb[2]["product_name"] == "D40"
+    assert tmb[2]["notes"] == "Khô dầu"
+    assert tmb[2]["m1"] == 5
+    assert tmb[2]["total_weight"] == 15500
+

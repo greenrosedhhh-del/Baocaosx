@@ -399,7 +399,7 @@ def _convert_to_shared_strings(path):
         strings.append(match.group(2))
         return f'{match.group(1)}t="s"><v>{len(strings) - 1}</v></c>'
 
-    sheet = re.sub(r'(<c [^>]*?)t="inlineStr"><is>(<t[^>]*>.*?</t>|<t/>)</is></c>', to_shared, sheet, flags=re.S)
+    sheet = re.sub(r'(<c [^>]*?)t="inlineStr"><is>(.*?)</is></c>', to_shared, sheet, flags=re.S)
     assert strings and "inlineStr" not in sheet
     parts["xl/worksheets/sheet1.xml"] = sheet.encode("utf-8")
     parts["xl/sharedStrings.xml"] = (

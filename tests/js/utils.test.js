@@ -124,6 +124,7 @@ test('draftHasContent counts attendance changes and leave names', () => {
   const blank = {
     packaging: [], baskets: [], tumbling: [], issues: '', suggestions: '',
     staff_total: '5', staff_present: '5', leave_permitted: '0', leave_permitted_names: '',
+    leave_rotating: '0', leave_rotating_names: '',
     leave_unpermitted: '0', leave_unpermitted_names: '', safety_production: true, safety_ppe: true, safety_equip: true
   };
   assert.equal(U.draftHasContent(blank), false);
@@ -131,8 +132,10 @@ test('draftHasContent counts attendance changes and leave names', () => {
   assert.equal(U.draftHasContent({ ...blank, staff_total: '7' }), true);
   assert.equal(U.draftHasContent({ ...blank, staff_present: '4' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_permitted: '1' }), true);
+  assert.equal(U.draftHasContent({ ...blank, leave_rotating: '1' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_unpermitted: '2' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_permitted_names: 'Hợi' }), true);
+  assert.equal(U.draftHasContent({ ...blank, leave_rotating_names: 'Bắc' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_unpermitted_names: '  Đồng ' }), true);
   assert.equal(U.draftHasContent({ ...blank, leave_unpermitted_names: '   ' }), false);
   assert.equal(U.draftHasContent({ ...blank, safety_production: false }), true);
@@ -241,14 +244,17 @@ test('absentCount never goes negative', () => {
 
 // ---------- F9 / #9: ràng buộc chấm công phía trình duyệt ----------
 test('attendanceProblem mirrors server rules', () => {
-  assert.equal(U.attendanceProblem({ staffTotal: 5, staffPresent: 5, leavePermitted: 0, leaveUnpermitted: 0 }), null);
-  assert.equal(U.attendanceProblem({ staffTotal: 6, staffPresent: 4, leavePermitted: 1, leaveUnpermitted: 1 }), null);
-  const present = U.attendanceProblem({ staffTotal: 5, staffPresent: 7, leavePermitted: 0, leaveUnpermitted: 0 });
+  assert.equal(U.attendanceProblem({ staffTotal: 5, staffPresent: 5, leavePermitted: 0, leaveRotating: 0, leaveUnpermitted: 0 }), null);
+  assert.equal(U.attendanceProblem({ staffTotal: 6, staffPresent: 3, leavePermitted: 1, leaveRotating: 1, leaveUnpermitted: 1 }), null);
+  const present = U.attendanceProblem({ staffTotal: 5, staffPresent: 7, leavePermitted: 0, leaveRotating: 0, leaveUnpermitted: 0 });
   assert.equal(present.field, 'staffPresent');
   assert.match(present.message, /có mặt \(7\).*sĩ số \(5\)/i);
-  const leave = U.attendanceProblem({ staffTotal: 5, staffPresent: 2, leavePermitted: 3, leaveUnpermitted: 3 });
+  const leave = U.attendanceProblem({ staffTotal: 5, staffPresent: 2, leavePermitted: 3, leaveRotating: 0, leaveUnpermitted: 3 });
   assert.equal(leave.field, 'leavePermitted');
   assert.match(leave.message, /nghỉ/i);
+  const leaveRotating = U.attendanceProblem({ staffTotal: 5, staffPresent: 2, leavePermitted: 2, leaveRotating: 2, leaveUnpermitted: 2 });
+  assert.equal(leaveRotating.field, 'leavePermitted');
+  assert.match(leaveRotating.message, /nghỉ/i);
 });
 
 // ---------- F16: sang ngày mới khi trang còn mở ----------

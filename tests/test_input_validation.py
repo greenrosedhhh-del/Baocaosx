@@ -161,11 +161,13 @@ def test_leave_counts_greater_than_total_are_rejected(client):
     assert resp.status_code == 422
     assert "nghỉ" in resp.json()["detail"].lower()
     assert client.post("/api/shifts", json=dict(BASE, staff_total=5, staff_present=5, leave_permitted=6)).status_code == 422
+    assert client.post("/api/shifts", json=dict(BASE, staff_total=5, staff_present=5, leave_rotating=6)).status_code == 422
+    assert client.post("/api/shifts", json=dict(BASE, staff_total=5, staff_present=1, leave_permitted=2, leave_rotating=2, leave_unpermitted=2)).status_code == 422
 
 
 def test_consistent_attendance_is_accepted(client):
     login_admin(client)
-    payload = dict(BASE, staff_total=6, staff_present=4, leave_permitted=1, leave_unpermitted=1)
+    payload = dict(BASE, staff_total=6, staff_present=3, leave_permitted=1, leave_rotating=1, leave_unpermitted=1)
     assert client.post("/api/shifts", json=payload).status_code == 200
 
 
@@ -178,6 +180,7 @@ def test_control_characters_are_stripped_from_text_fields(client):
         issues="Dòng 1\x00\x07\n\tDòng 2\x1b",
         suggestions="Đề\x0bxuất\x7f",
         leave_permitted_names="Hợi\x01",
+        leave_rotating_names="Đồng\x05",
         start_time="6h\x08",
         packaging=[{"product_name": "D2\x005", "customer": "VI\x1fCO", "weight_sorted": 10, "notes": "ghi\x0cchú\r\nok"}],
         baskets=[{"product_name": "D25", "customer": "VICO", "steel_grade": "CR\x1818", "basket_count": 1}],
@@ -188,6 +191,7 @@ def test_control_characters_are_stripped_from_text_fields(client):
     assert shift["issues"] == "Dòng 1\n\tDòng 2"
     assert shift["suggestions"] == "Đềxuất"
     assert shift["leave_permitted_names"] == "Hợi"
+    assert shift["leave_rotating_names"] == "Đồng"
     assert shift["start_time"] == "6h"
     assert shift["packaging"][0]["product_name"] == "D25"
     assert shift["packaging"][0]["customer"] == "VICO"
