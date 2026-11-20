@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VICO - Báo Cáo Sản Xuất Trực Tuyến PX NLLT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-badge">VICO</div>
+        <div class="brand-info">
+          <h1>CÔNG TY TNHH THẮNG LỢI</h1>
+          <p>PHÂN XƯỞNG NHIỆT LUYỆN LUYỆN THÉP (PX NLLT)</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="live-dot"></span>
+        <span id="currentDateDisplay">Hôm nay: ...</span>
+      </div>
+      <div class="header-status" id="userStatusBox" style="display:none;">
+        <span id="currentUserName"></span>
+        <button class="btn btn-sm btn-secondary" id="btnChangePassword" type="button">Đổi mật khẩu</button>
+        <button class="btn btn-sm btn-secondary" id="btnLogout" type="button">Đăng xuất</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="tab-nav">
+    <div class="nav-container">
+      <button class="tab-btn active" data-tab="entry-tab" id="btnTabEntry">
+        <span class="tab-icon">📝</span>
+        <span class="tab-title">Ca Trưởng Nhập Báo Cáo</span>
+      </button>
+      <button class="tab-btn" data-tab="summary-tab" id="btnTabSummary">
+        <span class="tab-icon">📊</span>
+        <span class="tab-title">Bảng Tổng Hợp & Xuất Excel</span>
+      </button>
+      <button class="tab-btn" data-tab="history-tab" id="btnTabHistory">
+        <span class="tab-icon">📈</span>
+        <span class="tab-title">Thống Kê & Lịch Sử</span>
+      </button>
+      <button class="tab-btn" data-tab="admin-tab" id="btnTabAdmin" style="display:none;">
+        <span class="tab-icon">👤</span>
+        <span class="tab-title">Quản Lý Tài Khoản</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    
+    <!-- ================= TAB 1: CA TRƯỞNG NHẬP BÁO CÁO ================= -->
+    <section id="entry-tab" class="tab-content active">
+      <form id="shiftReportForm" class="report-form">
+        
+        <!-- THÔNG TIN CHUNG & CA LÀM VIỆC -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-1">1</span>
+              <h2>Thông Tin Ca Làm Việc & Chấm Công</h2>
+            </div>
+            <div id="autoSaveIndicator" class="autosave-badge" style="display: none;">
+              <span class="autosave-dot"></span>
+              <span id="autoSaveText">Đã lưu nháp</span>
+            </div>
+          </div>
+
+          <!-- BANNER TRẠNG THÁI CA (ĐÃ NỘP / SỬA / MỚI) -->
+          <div id="shiftStatusBanner" class="shift-status-banner" style="display: none;"></div>
+
+          <div class="grid grid-3">
+            <div class="form-group">
+              <div class="label-with-chips">
+                <label for="reportDate">Ngày Báo Cáo <span class="req">*</span></label>
+                <div class="quick-date-chips">
+                  <button type="button" class="btn-chip" id="btnDateToday">Hôm nay</button>
+                  <button type="button" class="btn-chip" id="btnDateYesterday">Hôm qua</button>
+                </div>
+              </div>
+              <input type="date" id="reportDate" required>
+            </div>
+            <div class="form-group">
+              <label for="shiftNum">Ca Làm Việc <span class="req">*</span></label>
+              <select id="shiftNum" required>
+                <option value="1">Ca 1 (06:00 - 14:00)</option>
+                <option value="2">Ca 2 (14:00 - 22:00)</option>
+                <option value="3">Ca 3 (22:00 - 06:00 sáng sau)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="shiftLeader">Trưởng Ca</label>
+              <input type="text" id="shiftLeader" readonly>
+            </div>
+          </div>
+
+          <!-- Điều kiện an toàn & Thời gian -->
+          <div class="grid grid-2 mt-2">
+            <div class="checkbox-group">
+              <label class="custom-checkbox">
+                <input type="checkbox" id="safetyProduction" checked>
+                <span class="checkmark"></span>
+                <span>Điều kiện sản xuất (BT)</span>
+              </label>
+              <label class="custom-checkbox">
+                <input type="checkbox" id="safetyPpe" checked>
+                <span class="checkmark"></span>
+                <span>Bảo hộ lao động đầy đủ (BT)</span>
+              </label>
+              <label class="custom-checkbox">
+                <input type="checkbox" id="safetyEquip" checked>
+                <span class="checkmark"></span>
+                <span>Thiết bị an toàn (BT)</span>
+              </label>
+            </div>
+            <div class="grid grid-2">
+              <div class="form-group">
+                <label for="startTime">Giờ bắt đầu ca</label>
+                <input type="text" id="startTime" placeholder="VD: 6h, 14h, 22h" maxlength="100" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="endTime">Giờ kết thúc ca</label>
+                <input type="text" id="endTime" placeholder="VD: 14h, 22h, 6h" maxlength="100" enterkeyhint="next">
+              </div>
+            </div>
+          </div>
+
+          <!-- Khối chấm công -->
+          <div class="sub-card mt-2">
+            <h3 class="sub-card-title">Chấm Công Ca</h3>
+            <div class="grid grid-4">
+              <div class="form-group">
+                <label for="staffTotal">Tổng Sĩ Số</label>
+                <input type="number" id="staffTotal" value="5" min="1" max="1000" step="1" inputmode="numeric" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="staffPresent">Có Mặt</label>
+                <input type="number" id="staffPresent" value="5" min="0" max="1000" step="1" inputmode="numeric" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="leavePermitted">Nghỉ Có Phép (người)</label>
+                <input type="number" id="leavePermitted" value="0" min="0" max="1000" step="1" inputmode="numeric" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="leavePermittedNames">Tên Người Nghỉ Phép</label>
+                <input type="text" id="leavePermittedNames" placeholder="VD: Hải, Bắc" maxlength="500" enterkeyhint="next">
+              </div>
+            </div>
+            <div class="grid grid-4 mt-2">
+              <div class="form-group">
+                <label for="leaveRotating">Nghỉ Luân Phiên (người)</label>
+                <input type="number" id="leaveRotating" value="0" min="0" max="1000" step="1" inputmode="numeric" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="leaveRotatingNames">Tên Người Nghỉ Luân Phiên</label>
+                <input type="text" id="leaveRotatingNames" placeholder="VD: Hợi, Đồng" maxlength="500" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="leaveUnpermitted">Nghỉ Không Phép (người)</label>
+                <input type="number" id="leaveUnpermitted" value="0" min="0" max="1000" step="1" inputmode="numeric" enterkeyhint="next">
+              </div>
+              <div class="form-group">
+                <label for="leaveUnpermittedNames">Tên Người Nghỉ K.Phép (nếu có)</label>
+                <input type="text" id="leaveUnpermittedNames" placeholder="Để trống nếu không có" maxlength="500" enterkeyhint="next">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MỤC 1: BAO GÓI SẢN PHẨM -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-2">2</span>
+              <h2>Bao Gói Sản Phẩm</h2>
+            </div>
+            <div class="header-action-group">
+              <button type="button" class="btn btn-sm btn-outline-info" id="btnClonePrevious" title="Lấy danh mục sản phẩm từ ca gần nhất">
+                📋 Sao chép từ ca trước
+              </button>
+              <button type="button" class="btn btn-sm btn-outline" id="btnAddPackagingRow">+ Thêm Mục</button>
+            </div>
+          </div>
+          <p class="section-hint">Nhập khối lượng phân loại & hủy. Hệ thống tự động tính tỷ lệ hủy (%).</p>
+
+          <div class="item-cards-list" id="containerPackaging">
+            <!-- Dynamic item cards injected here -->
+          </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddPackagingBottom">
+            <span>➕ Thêm Sản Phẩm Khác</span>
+          </button>
+
+          <div class="form-group mt-2">
+            <label for="shiftTasks">Công Việc Xử Lý Trong Ca (nếu có)</label>
+            <textarea id="shiftTasks" rows="3" maxlength="2000" placeholder="VD:&#10;Xử lý miệng đổ bi may xóc 1 và 2&#10;Dây bi + kéo sọt lò NL1&#10;Vào bi lò NL2"></textarea>
+          </div>
+        </div>
+
+        <!-- MỤC 2: SỐ LƯỢNG GIỎ BI RA SAU TÔI -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-3">3</span>
+              <h2>Số Lượng Giỏ Bi Ra Sau Tôi</h2>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="btnAddBasketRow">+ Thêm Mục</button>
+          </div>
+          <p class="section-hint">Gõ số giỏ, hệ thống tự động nhân hệ số chuẩn <strong>350 Kg / Giỏ</strong>.</p>
+
+          <div class="item-cards-list" id="containerBaskets">
+            <!-- Dynamic item cards injected here -->
+          </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddBasketBottom">
+            <span>➕ Thêm Dòng Giỏ Bi Khác</span>
+          </button>
+        </div>
+
+        <!-- MỤC 3: SỐ MẺ BI XÓC -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-4">4</span>
+              <h2>Số Mẻ Bi Xóc</h2>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="btnAddTumblingRow">+ Thêm Mục</button>
+          </div>
+
+          <div class="item-cards-list" id="containerTumbling">
+            <!-- Dynamic item cards injected here -->
+          </div>
+          <button type="button" class="btn btn-outline btn-block mt-2" id="btnAddTumblingBottom">
+            <span>➕ Thêm Mẻ Bi Xóc Khác</span>
+          </button>
+        </div>
+
+        <!-- SỰ CỐ TRONG CA & ĐỀ XUẤT -->
+        <div class="card form-section">
+          <div class="section-header">
+            <span class="section-num sec-5">5</span>
+            <h2>Sự Cố Trong Ca & Yêu Cầu Đề Xuất</h2>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="form-group">
+              <label for="shiftIssues">Sự Cố Thiết Bị / Lò Trong Ca (nếu có)</label>
+              <textarea id="shiftIssues" rows="3" maxlength="2000" placeholder="VD:&#10;- Cầu 2 tây kêu to (15h50 - 19h)&#10;- Máy xóc 1 bay tấm lót (16h20 - hết ca)"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="shiftSuggestions">Yêu Cầu - Đề Xuất</label>
+              <textarea id="shiftSuggestions" rows="3" maxlength="2000" placeholder="Nhập đề xuất tới ban giám đốc (hoặc để KO)"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTION BUTTON -->
+        <div class="form-actions">
+          <button type="button" class="btn btn-danger-outline" id="btnDeleteShift" style="display: none;" title="Chỉ admin: xóa báo cáo nộp nhầm ca">🗑 Xóa báo cáo ca này</button>
+          <button type="button" class="btn btn-secondary" id="btnResetForm">Làm Mới Form</button>
+          <button type="submit" class="btn btn-primary btn-lg" id="btnSubmitReport">
+            <span class="btn-text">GỬI BÁO CÁO CA</span>
+            <span class="btn-subtext">(Lưu và tự động tổng hợp)</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ================= TAB 2: BẢNG TỔNG HỢP & XUẤT EXCEL ================= -->
+    <section id="summary-tab" class="tab-content">
+      <div class="card summary-control-card">
+        <div class="control-row">
+          <div class="date-picker-group">
+            <label for="summaryDate">Chọn Ngày Xem Tổng Hợp:</label>
+            <input type="date" id="summaryDate">
+            <button class="btn btn-sm btn-primary" id="btnLoadSummary">Xem Báo Cáo</button>
+          </div>
+
+          <div class="action-buttons-group">
+            <button class="btn btn-success" id="btnExportExcel">
+              <span class="icon">📥</span> Tải File Excel Báo Cáo Ngày
+            </button>
+            <button class="btn btn-accent" id="btnSyncMaster">
+              <span class="icon">🔄</span> Đồng Bộ Vào File Báo Cáo Tổng Hợp Gốc
+            </button>
+          </div>
+        </div>
+
+        <!-- TIẾN ĐỘ NỘP 3 CA TRONG NGÀY -->
+        <div class="shifts-progress-container mt-2">
+          <div class="progress-title">Tiến Độ Báo Cáo 3 Ca:</div>
+          <div class="shifts-badges" id="shiftsBadgesContainer">
+            <!-- Dynamic badges -->
+          </div>
+        </div>
+      </div>
+
+      <!-- KẾT QUẢ TỔNG HỢP CỘNG DỒN -->
+      <div class="summary-results-container" id="summaryResultsContainer">
+        <!-- Live summary tables rendered here -->
+      </div>
+    </section>
+
+    <!-- ================= TAB 3: THỐNG KÊ & LỊCH SỬ ================= -->
+    <section id="history-tab" class="tab-content">
+      <!-- KHỐI BÁO CÁO THỐNG KÊ CHU KỲ & BIỂU ĐỒ -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="section-header-flex">
+          <div class="section-header">
+            <span class="section-num sec-2">📈</span>
+            <h2>Báo Cáo Thống Kê & Xu Hướng Sản Xuất</h2>
+          </div>
+          <div class="quick-date-chips">
+            <button type="button" class="btn-chip active" id="btnStat7Days">7 ngày qua</button>
+            <button type="button" class="btn-chip" id="btnStat30Days">30 ngày qua</button>
+            <button type="button" class="btn-chip" id="btnStatThisMonth">Tháng này</button>
+          </div>
+        </div>
+
+        <div class="control-row mt-2" style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+          <div class="form-group" style="min-width: 160px;">
+            <label for="statStartDate">Từ Ngày:</label>
+            <input type="date" id="statStartDate">
+          </div>
+          <div class="form-group" style="min-width: 160px;">
+            <label for="statEndDate">Đến Ngày:</label>
+            <input type="date" id="statEndDate">
+          </div>
+          <div class="form-group">
+            <button class="btn btn-primary" id="btnLoadAnalytics" type="button">
+              <span>🔍 Phân Tích Số Liệu</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- THẺ KPI TỔNG QUAN -->
+        <div class="kpi-grid mt-3" id="kpiGrid">
+          <div class="kpi-card">
+            <div class="kpi-icon">📦</div>
+            <div class="kpi-info">
+              <div class="kpi-title">Sản Lượng Phân Loại</div>
+              <div class="kpi-value" id="kpiTotalSorted">0 Kg</div>
+              <div class="kpi-sub" id="kpiTotalSortedTon">0 tấn</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">⚠️</div>
+            <div class="kpi-info">
+              <div class="kpi-title">Tỷ Lệ Phế Phẩm TB</div>
+              <div class="kpi-value" id="kpiWasteRate">0%</div>
+              <div class="kpi-sub" id="kpiTotalWaste">Hủy: 0 Kg</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🛒</div>
+            <div class="kpi-info">
+              <div class="kpi-title">Tổng Giỏ Bi Ra Lò</div>
+              <div class="kpi-value" id="kpiTotalBaskets">0 giỏ</div>
+              <div class="kpi-sub" id="kpiBasketWeight">0 tấn</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">👥</div>
+            <div class="kpi-info">
+              <div class="kpi-title">Tỷ Lệ Quân Số Có Mặt</div>
+              <div class="kpi-value" id="kpiAttendanceRate">0%</div>
+              <div class="kpi-sub" id="kpiShiftsCount">0 ca báo cáo</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CÁC BIỂU ĐỒ PHÂN TÍCH -->
+        <div class="charts-grid mt-3">
+          <div class="chart-box">
+            <div class="chart-header">
+              <h3>Biểu Đồ Xu Hướng Sản Lượng & Tỉ Lệ Hủy Theo Ngày</h3>
+            </div>
+            <div class="chart-canvas-wrapper">
+              <canvas id="chartDailyTrend"></canvas>
+            </div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-header">
+              <h3>Cơ Cấu Sản Lượng Theo Sản Phẩm</h3>
+            </div>
+            <div class="chart-canvas-wrapper">
+              <canvas id="chartByProduct"></canvas>
+            </div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-header">
+              <h3>So Sánh Sản Lượng Phân Loại 3 Ca</h3>
+            </div>
+            <div class="chart-canvas-wrapper">
+              <canvas id="chartByShift"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BẢNG LỊCH SỬ GẦN ĐÂY -->
+      <div class="card">
+        <div class="section-header-flex">
+          <h2>Lịch Sử Báo Cáo Sản Xuất Gần Đây</h2>
+          <button class="btn btn-sm btn-outline" id="btnRefreshHistory">Làm mới</button>
+        </div>
+        <div class="table-responsive mt-2">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ngày Báo Cáo</th>
+                <th>Số Ca Đã Nộp</th>
+                <th>Các Ca</th>
+                <th>Trưởng Ca Phụ Trách</th>
+                <th>Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyHistory">
+              <!-- History rows injected here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 4: QUẢN LÝ TÀI KHOẢN & HỆ THỐNG (ADMIN) ================= -->
+    <section id="admin-tab" class="tab-content">
+      <!-- 1. QUẢN LÝ DANH MỤC SẢN XUẤT -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="section-header-flex">
+          <div class="section-header">
+            <span class="section-num sec-3">🏷️</span>
+            <h2>Quản Lý Danh Mục (Sản Phẩm, Khách Hàng, Mác Thép)</h2>
+          </div>
+          <button class="btn btn-sm btn-outline" id="btnRefreshPresets" type="button">Làm mới</button>
+        </div>
+        <p class="section-hint">Danh mục này sẽ tự động gợi ý khi Ca trưởng nhập báo cáo ca. Bạn có thể thêm mã mới hoặc ẩn mã không dùng.</p>
+        
+        <form id="createPresetForm" class="grid grid-4 mt-2">
+          <div class="form-group">
+            <label for="newPresetCategory">Loại danh mục <span class="req">*</span></label>
+            <select id="newPresetCategory" required>
+              <option value="product">Sản phẩm (VD: D25, D40, D60...)</option>
+              <option value="customer">Khách hàng (VD: Molycop, VICO...)</option>
+              <option value="steel_grade">Mác thép (VD: CR18, B2...)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="newPresetName">Tên / Mã hiển thị <span class="req">*</span></label>
+            <input type="text" id="newPresetName" placeholder="VD: D100 hoặc Thép mới" maxlength="100" required>
+          </div>
+          <div class="form-group">
+            <label for="newPresetOrder">Thứ tự ưu tiên</label>
+            <input type="number" id="newPresetOrder" value="0" min="0" max="999" step="1">
+          </div>
+          <div class="form-group" style="align-self: end;">
+            <button type="submit" class="btn btn-primary btn-block">+ Thêm Danh Mục</button>
+          </div>
+        </form>
+
+        <div class="preset-columns-grid mt-3">
+          <div class="preset-col">
+            <h3 class="preset-col-title">📦 Sản Phẩm</h3>
+            <div class="preset-list" id="listPresetProducts"></div>
+          </div>
+          <div class="preset-col">
+            <h3 class="preset-col-title">🏢 Khách Hàng</h3>
+            <div class="preset-list" id="listPresetCustomers"></div>
+          </div>
+          <div class="preset-col">
+            <h3 class="preset-col-title">⚙️ Mác Thép</h3>
+            <div class="preset-list" id="listPresetSteelGrades"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. TRUNG TÂM SAO LƯU & DỮ LIỆU HỆ THỐNG -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="section-header-flex">
+          <div class="section-header">
+            <span class="section-num sec-4">💾</span>
+            <h2>Sao Lưu & Tải Dữ Liệu Hệ Thống</h2>
+          </div>
+        </div>
+        <p class="section-hint">Tải dữ liệu định kỳ về máy tính cá nhân để lưu trữ dự phòng hoặc kiểm toán độc lập.</p>
+        <div class="backup-actions-row mt-2" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-primary" id="btnDownloadDbBackup" type="button">
+            <span class="icon">💾</span> Tải Bản Sao Lưu Database (.db)
+          </button>
+          <button class="btn btn-accent" id="btnDownloadMasterExcel" type="button">
+            <span class="icon">📥</span> Tải File Excel Tổng Hợp Gốc (Master)
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. THÊM TÀI KHOẢN CA TRƯỞNG -->
+      <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="section-header-flex">
+          <h2>Thêm Tài Khoản Ca Trưởng</h2>
+        </div>
+        <form id="createUserForm" class="grid grid-4">
+          <div class="form-group">
+            <label for="newUsername">Tên đăng nhập</label>
+            <input type="text" id="newUsername" maxlength="64" required>
+          </div>
+          <div class="form-group">
+            <label for="newFullName">Họ tên hiển thị</label>
+            <input type="text" id="newFullName" maxlength="100" required>
+          </div>
+          <div class="form-group">
+            <label for="newPassword">Mật khẩu tạm (ít nhất 6 ký tự)</label>
+            <input type="text" id="newPassword" minlength="6" maxlength="72" autocomplete="off" required>
+          </div>
+          <div class="form-group">
+            <label for="newRole">Vai trò</label>
+            <select id="newRole">
+              <option value="leader">Ca trưởng</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self: end;">
+            <button type="submit" class="btn btn-primary">+ Tạo Tài Khoản</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- 4. DANH SÁCH TÀI KHOẢN -->
+      <div class="card">
+        <div class="section-header-flex">
+          <h2>Danh Sách Tài Khoản</h2>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tên đăng nhập</th>
+                <th>Họ tên</th>
+                <th>Vai trò</th>
+                <th>Trạng thái</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyUsers"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- HỘP THOẠI ĐỔI MẬT KHẨU -->
+  <div id="passwordModal" class="modal-overlay" style="display:none;">
+    <div class="card modal-card" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+      <h2 id="passwordModalTitle">🔒 Đổi Mật Khẩu</h2>
+      <p id="passwordModalHint" class="section-hint"></p>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label for="currentPassword">Mật khẩu hiện tại</label>
+          <input type="password" id="currentPassword" autocomplete="current-password" maxlength="128" required>
+        </div>
+        <div class="form-group mt-2">
+          <label for="newPasswordSelf">Mật khẩu mới (ít nhất 6 ký tự)</label>
+          <input type="password" id="newPasswordSelf" autocomplete="new-password" minlength="6" maxlength="72" required>
+        </div>
+        <div class="form-group mt-2">
+          <label for="confirmPasswordSelf">Nhập lại mật khẩu mới</label>
+          <input type="password" id="confirmPasswordSelf" autocomplete="new-password" minlength="6" maxlength="72" required>
+        </div>
+        <div id="passwordModalError" class="login-error-box" style="display:none;">
+          <span class="error-icon">⚠️</span>
+          <span id="passwordModalErrorText" class="error-text"></span>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnPasswordCancel">Hủy</button>
+          <button type="submit" class="btn btn-primary" id="btnPasswordSave">Lưu mật khẩu mới</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION TOAST -->
+  <div id="toastNotification" class="toast">
+    <span id="toastMessage">Thông báo</span>
+  </div>
+
+  <!-- DATALISTS CHO GỢI Ý DANH MỤC -->
+  <datalist id="presetProducts"></datalist>
+  <datalist id="presetCustomers"></datalist>
+  <datalist id="presetSteelGrades"></datalist>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="supabase_adapter.js"></script>
+  <script src="chart.umd.min.js"></script>
+  <script src="utils.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
