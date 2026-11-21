@@ -488,15 +488,41 @@
       const issuesList = shifts.filter(s => s.issues && s.issues !== "KO" && s.issues !== "Ko").map(s => `Ca ${s.shift_num}: ${s.issues}`);
       const suggList = shifts.filter(s => s.suggestions && s.suggestions !== "KO" && s.suggestions !== "Ko").map(s => `Ca ${s.shift_num}: ${s.suggestions}`);
 
+      const totalAbsent = Math.max(0, totalStaff - totalPresent);
+      let leaveDetail = "";
+      if (leaveRotating > 0) {
+        leaveDetail = `${leaveRotating} người nghỉ luân phiên`;
+      } else if (totalAbsent > 0) {
+        leaveDetail = `${totalAbsent} người nghỉ`;
+      }
+
+      const packagingNotes = [];
+      shifts.forEach(s => {
+        const tasks = (s.shift_tasks || "").trim();
+        if (tasks && tasks.toUpperCase() !== "KO") {
+          tasks.split("\n").forEach(line => {
+            const cleaned = line.trim();
+            if (cleaned) packagingNotes.push(cleaned);
+          });
+        }
+      });
+
+      const prodFailedShifts = shifts.filter(s => s.safety_production !== null && s.safety_production !== undefined && !s.safety_production).map(s => s.shift_num);
+      const ppeFailedShifts = shifts.filter(s => s.safety_ppe !== null && s.safety_ppe !== undefined && !s.safety_ppe).map(s => s.shift_num);
+      const equipFailedShifts = shifts.filter(s => s.safety_equip !== null && s.safety_equip !== undefined && !s.safety_equip).map(s => s.shift_num);
+
       return makeRes({
         report_date: reportDate,
         submitted_shifts: shifts.map(s => s.shift_num),
         shifts: shifts,
         packaging: packagingList,
+        packaging_notes: packagingNotes,
         baskets: basketsList,
+        basket_notes: "",
         tumbling: tumblingList,
         issues: issuesList,
         suggestions: suggList.length ? suggList.join("; ") : "KO",
+        reporter_name: "Ngọc Quang",
         attendance: {
           total_staff: totalStaff,
           present: totalPresent,
@@ -504,13 +530,17 @@
           leave_notes: leaveNotesList.join("; ") || "Ko",
           leave_rotating: leaveRotating,
           rotating_notes: rotNotesList.join("; ") || "Ko",
+          leave_detail: leaveDetail,
           leave_unpermitted: leaveUnpermitted,
           unpermitted: unpNotesList.join("; ") || "Ko"
         },
         safety: {
-          production: shifts.every(s => s.safety_production === 1) ? 1 : 0,
-          ppe: shifts.every(s => s.safety_ppe === 1) ? 1 : 0,
-          equip: shifts.every(s => s.safety_equip === 1) ? 1 : 0
+          production: prodFailedShifts.length === 0 ? 1 : 0,
+          ppe: ppeFailedShifts.length === 0 ? 1 : 0,
+          equip: equipFailedShifts.length === 0 ? 1 : 0,
+          production_failed_shifts: prodFailedShifts,
+          ppe_failed_shifts: ppeFailedShifts,
+          equip_failed_shifts: equipFailedShifts
         },
         excel_row_limits: { packaging: 4, baskets: 4, tumbling: 6 }
       });
@@ -622,14 +652,30 @@
       });
     }
 
-    // 9. EXCEL EXPORT (Client-side via SheetJS)
+    // 9. EXCEL EXPORT (ExcelJS + Template chuẩn VICO, fallback SheetJS)
     if (pathOnly === "/api/export-excel" && method === "GET") {
       const reportDate = q.date || q.report_date;
-      if (window.XLSX) {
-        // Tải dữ liệu tổng hợp
-        const sumRes = await handleApiRequest(`/api/daily-summary?date=${encodeURIComponent(reportDate)}`);
-        const sumData = await sumRes.json();
+      const sumRes = await handleApiRequest(`/api/daily-summary?date=${encodeURIComponent(reportDate)}`);
+      const sumData = await sumRes.json();
+      const safeDate = String(reportDate || "").replace(/-/g, "") || "report";
 
+      if (window.VicoNlltExcel && window.ExcelJS) {
+        try {
+          const xlsxBuf = await window.VicoNlltExcel.exportSummaryToBuffer(sumData);
+          return new Response(xlsxBuf, {
+            status: 200,
+            statusText: "OK",
+            headers: {
+              "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "Content-Disposition": `attachment; filename="BAO_CAO_TONG_HOP_${safeDate}.xlsx"`
+            }
+          });
+        } catch (excelErr) {
+          console.error("VicoNlltExcel export failed, falling back to SheetJS:", excelErr);
+        }
+      }
+
+      if (window.XLSX) {
         const wb = window.XLSX.utils.book_new();
         const wsData = [
           ["BÁO CÁO SẢN XUẤT NGÀY", reportDate],
@@ -658,7 +704,6 @@
         const ws = window.XLSX.utils.aoa_to_sheet(wsData);
         window.XLSX.utils.book_append_sheet(wb, ws, "BaoCaoNgay");
         const xlsxArray = window.XLSX.write(wb, { bookType: "xlsx", type: "array" });
-        const safeDate = String(reportDate || "").replace(/-/g, "") || "report";
         return new Response(xlsxArray, {
           status: 200,
           statusText: "OK",
