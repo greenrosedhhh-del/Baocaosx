@@ -383,6 +383,73 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // --- PHÂN XƯỞNG SONG SONG (PX NLLT & PX ĐÚC 2) ---
+  const D2U = window.Duc2Utils;
+  const workshopSwitcher = document.getElementById('workshopSwitcher');
+  const btnWsNllt = document.getElementById('btnWsNllt');
+  const btnWsDuc2 = document.getElementById('btnWsDuc2');
+  const workshopSubtitle = document.getElementById('workshopSubtitle');
+  const btnTabEntryEl = document.getElementById('btnTabEntry');
+  const btnTabSummaryEl = document.getElementById('btnTabSummary');
+  const btnTabHistoryEl = document.getElementById('btnTabHistory');
+  const btnTabDuc2LiveEl = document.getElementById('btnTabDuc2Live');
+  const btnTabDuc2HistoryEl = document.getElementById('btnTabDuc2History');
+  const btnTabAdmin = document.getElementById('btnTabAdmin');
+
+  let activeWorkshop = D2U ? D2U.defaultWorkshopForUser(currentUser) : 'nllt';
+  const canNllt = D2U ? D2U.canAccessWorkshop(currentUser, 'nllt') : true;
+  const canDuc2 = D2U ? D2U.canAccessWorkshop(currentUser, 'duc2') : false;
+
+  if (workshopSwitcher && canNllt && canDuc2) {
+    workshopSwitcher.style.display = 'inline-flex';
+  }
+
+  function applyWorkshopMode(ws, preserveAdminTab = false) {
+    if (D2U && !D2U.canAccessWorkshop(currentUser, ws)) {
+      ws = canDuc2 ? 'duc2' : 'nllt';
+    }
+    activeWorkshop = ws;
+    if (canNllt && canDuc2) {
+      try {
+        localStorage.setItem('vico_active_workshop', ws);
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (btnWsNllt) btnWsNllt.classList.toggle('active', ws === 'nllt');
+    if (btnWsDuc2) btnWsDuc2.classList.toggle('active', ws === 'duc2');
+    if (workshopSubtitle) {
+      workshopSubtitle.textContent = ws === 'duc2'
+        ? 'PHÂN XƯỞNG ĐÚC 2 (PX ĐÚC 2)'
+        : 'PHÂN XƯỞNG NHIỆT LUYỆN LUYỆN THÉP (PX NLLT)';
+    }
+
+    const isNllt = ws === 'nllt';
+    if (btnTabEntryEl) btnTabEntryEl.style.display = isNllt ? 'flex' : 'none';
+    if (btnTabSummaryEl) btnTabSummaryEl.style.display = (isNllt && currentUser.role === 'admin') ? 'flex' : 'none';
+    if (btnTabHistoryEl) btnTabHistoryEl.style.display = (isNllt && currentUser.role === 'admin') ? 'flex' : 'none';
+    if (btnTabDuc2LiveEl) btnTabDuc2LiveEl.style.display = !isNllt ? 'flex' : 'none';
+    if (btnTabDuc2HistoryEl) btnTabDuc2HistoryEl.style.display = !isNllt ? 'flex' : 'none';
+    if (btnTabAdmin) btnTabAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none';
+
+    const onAdminTab = preserveAdminTab && document.getElementById('admin-tab').classList.contains('active');
+    if (!onAdminTab) {
+      const targetBtn = isNllt ? btnTabEntryEl : btnTabDuc2LiveEl;
+      if (targetBtn) targetBtn.click();
+    }
+
+    if (!isNllt && window.Duc2App) {
+      window.Duc2App.activate(currentUser, { apiFetch, showToast, reportError, formatDateDisplay });
+    } else if (isNllt && shiftStatus === null) {
+      renderShiftStatus();
+      checkCurrentShiftStatus();
+    }
+  }
+
+  if (btnWsNllt) btnWsNllt.addEventListener('click', () => applyWorkshopMode('nllt'));
+  if (btnWsDuc2) btnWsDuc2.addEventListener('click', () => applyWorkshopMode('duc2'));
+
   // --- NGÀY HÔM NAY (tự cập nhật khi qua nửa đêm) ---
   const todayStr = () => toLocalDateStr(new Date());
   let knownToday = todayStr();
@@ -397,15 +464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   summaryDateInput.value = knownToday;
   applyTodayToUi();
 
-  const btnTabSummaryEl = document.getElementById('btnTabSummary');
-  const btnTabHistoryEl = document.getElementById('btnTabHistory');
-  const btnTabAdmin = document.getElementById('btnTabAdmin');
-  if (currentUser.role !== 'admin') {
-    btnTabSummaryEl.style.display = 'none';
-    btnTabHistoryEl.style.display = 'none';
-  } else {
-    btnTabAdmin.style.display = 'flex';
-  }
+  applyWorkshopMode(activeWorkshop);
 
   let presets = {
     products: ["D25", "D40", "D60"],
@@ -465,6 +524,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (targetId === 'history-tab') {
         loadHistory();
         initAndLoadAnalytics();
+      } else if (targetId === 'duc2-live-tab') {
+        if (window.Duc2App) window.Duc2App.onTabShow('live');
+      } else if (targetId === 'duc2-history-tab') {
+        if (window.Duc2App) window.Duc2App.onTabShow('history');
       } else if (targetId === 'admin-tab') {
         loadUsers();
         loadAdminPresets();
@@ -1383,9 +1446,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 50);
   }, true);
 
-  // Initial check on load
-  renderShiftStatus();
-  checkCurrentShiftStatus();
+  // Initial check on load (chỉ chạy cho NLLT nếu user có quyền NLLT)
+  if (canNllt) {
+    renderShiftStatus();
+    checkCurrentShiftStatus();
+  }
 
   // --- SUBMIT REPORT FORM ---
   shiftReportForm.addEventListener('submit', async (e) => {
@@ -1906,7 +1971,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div style="flex: 1; max-width: 250px;">
             <div style="font-weight: 700; color: var(--slate-700); margin-bottom: 0.5rem; text-transform: uppercase;">GĐ Nhà Máy</div>
             <div style="height: 85px; display: flex; align-items: center; justify-content: center;">
-              <img src="/signature_gd.png" alt="Chữ ký GĐ Nhà máy" style="max-height: 80px; max-width: 140px; object-fit: contain;">
+              <img src="signature_gd.png" alt="Chữ ký GĐ Nhà máy" style="max-height: 80px; max-width: 140px; object-fit: contain;">
             </div>
             <div style="font-size: 0.85rem; color: var(--slate-500); margin-top: 0.25rem;">(Đã ký)</div>
           </div>
@@ -2024,6 +2089,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   // --- TAB 4: ADMIN USER MANAGEMENT ---
   const tbodyUsers = document.getElementById('tbodyUsers');
   const createUserForm = document.getElementById('createUserForm');
+  const newRoleSelect = document.getElementById('newRole');
+  const newWorkshopSelect = document.getElementById('newWorkshop');
+  const newSignatureFile = document.getElementById('newSignatureFile');
+  const newSignaturePreview = document.getElementById('newSignaturePreview');
+  const btnClearNewSignature = document.getElementById('btnClearNewSignature');
+  let pendingNewUserSignature = null;
+
+  if (newRoleSelect && newWorkshopSelect) {
+    newRoleSelect.addEventListener('change', () => {
+      if (newRoleSelect.value === 'admin') {
+        newWorkshopSelect.value = 'all';
+      }
+    });
+  }
+
+  function clearNewSignatureInput() {
+    pendingNewUserSignature = null;
+    if (newSignatureFile) newSignatureFile.value = '';
+    if (newSignaturePreview) {
+      newSignaturePreview.src = '';
+      newSignaturePreview.style.display = 'none';
+    }
+    if (btnClearNewSignature) btnClearNewSignature.style.display = 'none';
+  }
+
+  if (newSignatureFile) {
+    newSignatureFile.addEventListener('change', async () => {
+      const file = newSignatureFile.files && newSignatureFile.files[0];
+      if (!file) {
+        clearNewSignatureInput();
+        return;
+      }
+      try {
+        const compressed = await window.VicoSignatureHelper.compressSignatureFile(file);
+        pendingNewUserSignature = compressed;
+        if (newSignaturePreview) {
+          newSignaturePreview.src = compressed;
+          newSignaturePreview.style.display = 'block';
+        }
+        if (btnClearNewSignature) btnClearNewSignature.style.display = 'inline-flex';
+      } catch (err) {
+        reportError(err);
+        clearNewSignatureInput();
+      }
+    });
+  }
+  if (btnClearNewSignature) {
+    btnClearNewSignature.addEventListener('click', clearNewSignatureInput);
+  }
 
   createUserForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2031,7 +2145,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       username: document.getElementById('newUsername').value.trim(),
       full_name: document.getElementById('newFullName').value.trim(),
       password: document.getElementById('newPassword').value,
-      role: document.getElementById('newRole').value
+      role: document.getElementById('newRole').value,
+      workshop: newWorkshopSelect ? newWorkshopSelect.value : 'nllt',
+      signature_data: pendingNewUserSignature
     };
     try {
       await apiFetch('/api/admin/users', {
@@ -2041,6 +2157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       showToast('Đã tạo tài khoản! Người dùng sẽ phải đổi mật khẩu khi đăng nhập lần đầu.');
       createUserForm.reset();
+      clearNewSignatureInput();
       loadUsers();
     } catch (err) {
       reportError(err);
@@ -2054,21 +2171,113 @@ document.addEventListener('DOMContentLoaded', async () => {
       tbodyUsers.innerHTML = '';
       users.forEach(u => {
         const isSelf = u.username === currentUser.username;
+        const userWs = u.workshop || (u.role === 'admin' ? 'all' : 'nllt');
         let statusBadge = `<span class="rate-badge ${u.active ? 'good' : 'bad'}">${u.active ? 'Đang hoạt động' : 'Đã khóa'}</span>`;
         if (u.active && u.must_change_password) {
           statusBadge += ' <span class="rate-badge warn">Chờ đổi mật khẩu</span>';
         }
+        const sigCellHtml = u.signature_data
+          ? `<div class="admin-sig-cell">
+               <img src="${escapeHtml(u.signature_data)}" alt="Chữ ký ${escapeHtml(u.full_name)}" class="admin-sig-thumb">
+               <div class="admin-sig-btns">
+                 <button type="button" class="btn btn-sm btn-outline btn-upload-sig">✍️ Đổi</button>
+                 <button type="button" class="btn btn-sm btn-secondary btn-clear-sig" title="Xóa chữ ký">✕</button>
+               </div>
+             </div>`
+          : `<div class="admin-sig-cell">
+               <span style="font-size:0.78rem; color:var(--slate-600);">Chưa gắn</span>
+               <button type="button" class="btn btn-sm btn-outline btn-upload-sig">✍️ Gắn ảnh</button>
+             </div>`;
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${escapeHtml(u.username)}</td>
           <td>${escapeHtml(u.full_name)}${isSelf ? ' <em>(bạn)</em>' : ''}</td>
           <td>${u.role === 'admin' ? 'Admin' : 'Ca trưởng'}</td>
+          <td>
+            <select class="user-workshop-select">
+              <option value="nllt" ${userWs === 'nllt' ? 'selected' : ''}>PX NLLT</option>
+              <option value="duc2" ${userWs === 'duc2' ? 'selected' : ''}>PX ĐÚC 2</option>
+              <option value="all" ${userWs === 'all' ? 'selected' : ''}>Tất cả</option>
+            </select>
+          </td>
+          <td>${sigCellHtml}</td>
           <td>${statusBadge}</td>
           <td>
             ${isSelf ? '' : `<button class="btn btn-sm btn-outline btn-toggle-active">${u.active ? 'Khóa' : 'Mở khóa'}</button>`}
             <button class="btn btn-sm btn-outline btn-reset-password">Đổi mật khẩu</button>
           </td>
         `;
+
+        const wsSelect = tr.querySelector('.user-workshop-select');
+        wsSelect.addEventListener('change', async () => {
+          const nextWs = wsSelect.value;
+          try {
+            await apiFetch(`/api/admin/users/${u.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ workshop: nextWs })
+            });
+            showToast(`Đã cập nhật phân xưởng cho ${u.full_name}`);
+            if (isSelf) currentUser.workshop = nextWs;
+          } catch (err) {
+            reportError(err);
+            loadUsers();
+          }
+        });
+
+        const btnUploadSig = tr.querySelector('.btn-upload-sig');
+        if (btnUploadSig) {
+          btnUploadSig.addEventListener('click', () => {
+            const picker = document.createElement('input');
+            picker.type = 'file';
+            picker.accept = 'image/*';
+            picker.onchange = async () => {
+              const file = picker.files && picker.files[0];
+              if (!file) return;
+              try {
+                const compressed = await window.VicoSignatureHelper.compressSignatureFile(file);
+                await apiFetch(`/api/admin/users/${u.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ signature_data: compressed })
+                });
+                if (isSelf) {
+                  currentUser.signature_data = compressed;
+                  if (window.Duc2App) window.Duc2App.updateCurrentUser(currentUser);
+                }
+                showToast(`Đã lưu ảnh chữ ký cho ${u.full_name}!`);
+                loadUsers();
+              } catch (err) {
+                reportError(err);
+              }
+            };
+            picker.click();
+          });
+        }
+
+        const btnClearSig = tr.querySelector('.btn-clear-sig');
+        if (btnClearSig) {
+          btnClearSig.addEventListener('click', async () => {
+            if (!confirm(`Xóa ảnh chữ ký của ${u.full_name}?`)) return;
+            try {
+              await apiFetch(`/api/admin/users/${u.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ signature_data: null })
+              });
+              if (isSelf) {
+                currentUser.signature_data = null;
+                if (window.Duc2App) window.Duc2App.updateCurrentUser(currentUser);
+              }
+              showToast(`Đã xóa chữ ký của ${u.full_name}.`);
+              loadUsers();
+            } catch (err) {
+              reportError(err);
+            }
+          });
+        }
+
         const btnToggle = tr.querySelector('.btn-toggle-active');
         if (btnToggle) {
           btnToggle.addEventListener('click', async () => {
@@ -2107,7 +2316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     } catch (err) {
       if (err.status === 401) return;
-      tbodyUsers.innerHTML = `<tr><td colspan="5" style="color: var(--danger);">Lỗi tải danh sách: ${escapeHtml(err.message)}</td></tr>`;
+      tbodyUsers.innerHTML = `<tr><td colspan="7" style="color: var(--danger);">Lỗi tải danh sách: ${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
@@ -2117,6 +2326,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const listPresetProducts = document.getElementById('listPresetProducts');
   const listPresetCustomers = document.getElementById('listPresetCustomers');
   const listPresetSteelGrades = document.getElementById('listPresetSteelGrades');
+  const listPresetDuc2Products = document.getElementById('listPresetDuc2Products');
+  const listPresetDuc2Customers = document.getElementById('listPresetDuc2Customers');
+  const listPresetDuc2SteelGrades = document.getElementById('listPresetDuc2SteelGrades');
+  const listPresetDuc2Furnaces = document.getElementById('listPresetDuc2Furnaces');
 
   if (btnRefreshPresets) {
     btnRefreshPresets.addEventListener('click', loadAdminPresets);
@@ -2140,6 +2353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         showToast(`Đã thêm "${name}" vào danh mục!`);
         await loadAdminPresets();
         await loadUserPresets();
+        if (window.Duc2App) await window.Duc2App.reloadPresets();
       } catch (err) {
         reportError(err);
       }
@@ -2148,15 +2362,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadAdminPresets() {
     if (!listPresetProducts) return;
+    const categoryTargets = {
+      product: listPresetProducts,
+      customer: listPresetCustomers,
+      steel_grade: listPresetSteelGrades,
+      duc2_product: listPresetDuc2Products,
+      duc2_customer: listPresetDuc2Customers,
+      duc2_steel_grade: listPresetDuc2SteelGrades,
+      duc2_furnace: listPresetDuc2Furnaces
+    };
+
     try {
       const res = await apiFetch('/api/admin/presets');
       const items = await res.json();
 
-      listPresetProducts.innerHTML = '';
-      listPresetCustomers.innerHTML = '';
-      listPresetSteelGrades.innerHTML = '';
+      Object.values(categoryTargets).forEach(elTarget => {
+        if (elTarget) elTarget.innerHTML = '';
+      });
 
       items.forEach(item => {
+        const target = categoryTargets[item.category];
+        if (!target) return;
+
         const div = document.createElement('div');
         div.className = 'preset-item' + (item.active ? '' : ' inactive');
         div.innerHTML = `
@@ -2176,6 +2403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             await loadAdminPresets();
             await loadUserPresets();
+            if (window.Duc2App) await window.Duc2App.reloadPresets();
           } catch (err) {
             reportError(err);
           }
@@ -2188,18 +2416,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             showToast(`Đã xóa "${item.name}"`);
             await loadAdminPresets();
             await loadUserPresets();
+            if (window.Duc2App) await window.Duc2App.reloadPresets();
           } catch (err) {
             reportError(err);
           }
         });
 
-        if (item.category === 'product') {
-          listPresetProducts.appendChild(div);
-        } else if (item.category === 'customer') {
-          listPresetCustomers.appendChild(div);
-        } else if (item.category === 'steel_grade') {
-          listPresetSteelGrades.appendChild(div);
-        }
+        target.appendChild(div);
       });
     } catch (err) {
       if (err.status === 401) return;

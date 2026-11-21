@@ -18,8 +18,12 @@
         <div class="brand-badge">VICO</div>
         <div class="brand-info">
           <h1>CÔNG TY TNHH THẮNG LỢI</h1>
-          <p>PHÂN XƯỞNG NHIỆT LUYỆN LUYỆN THÉP (PX NLLT)</p>
+          <p id="workshopSubtitle">PHÂN XƯỞNG NHIỆT LUYỆN LUYỆN THÉP (PX NLLT)</p>
         </div>
+      </div>
+      <div class="workshop-switcher" id="workshopSwitcher" style="display:none;" role="group" aria-label="Chọn phân xưởng">
+        <button type="button" class="ws-pill active" data-workshop="nllt" id="btnWsNllt">PX NLLT</button>
+        <button type="button" class="ws-pill" data-workshop="duc2" id="btnWsDuc2">PX ĐÚC 2</button>
       </div>
       <div class="header-status">
         <span class="live-dot"></span>
@@ -36,17 +40,25 @@
   <!-- NAVIGATION TABS -->
   <nav class="tab-nav">
     <div class="nav-container">
-      <button class="tab-btn active" data-tab="entry-tab" id="btnTabEntry">
+      <button class="tab-btn active" data-tab="entry-tab" data-workshop="nllt" id="btnTabEntry">
         <span class="tab-icon">📝</span>
         <span class="tab-title">Ca Trưởng Nhập Báo Cáo</span>
       </button>
-      <button class="tab-btn" data-tab="summary-tab" id="btnTabSummary">
+      <button class="tab-btn" data-tab="summary-tab" data-workshop="nllt" id="btnTabSummary">
         <span class="tab-icon">📊</span>
         <span class="tab-title">Bảng Tổng Hợp & Xuất Excel</span>
       </button>
-      <button class="tab-btn" data-tab="history-tab" id="btnTabHistory">
+      <button class="tab-btn" data-tab="history-tab" data-workshop="nllt" id="btnTabHistory">
         <span class="tab-icon">📈</span>
         <span class="tab-title">Thống Kê & Lịch Sử</span>
+      </button>
+      <button class="tab-btn" data-tab="duc2-live-tab" data-workshop="duc2" id="btnTabDuc2Live" style="display:none;">
+        <span class="tab-icon">🔥</span>
+        <span class="tab-title">Nhập Trực Tiếp Trong Ca</span>
+      </button>
+      <button class="tab-btn" data-tab="duc2-history-tab" data-workshop="duc2" id="btnTabDuc2History" style="display:none;">
+        <span class="tab-icon">📋</span>
+        <span class="tab-title">Danh Sách Ca & Xuất Excel</span>
       </button>
       <button class="tab-btn" data-tab="admin-tab" id="btnTabAdmin" style="display:none;">
         <span class="tab-icon">👤</span>
@@ -430,6 +442,437 @@
       </div>
     </section>
 
+    <!-- ================= TAB PX ĐÚC 2 (1): NHẬP TRỰC TIẾP TRONG CA ================= -->
+    <section id="duc2-live-tab" class="tab-content">
+      <!-- Thanh chọn ngày / ca & trạng thái live -->
+      <div class="card duc2-topbar-card">
+        <div class="section-header-flex">
+          <div class="section-header" style="margin-bottom: 0;">
+            <span class="section-num sec-1">🔥</span>
+            <div>
+              <h2 style="margin: 0;">PX ĐÚC 2 — Nhật Ký Sản Xuất Trực Tiếp Trong Ca</h2>
+            </div>
+          </div>
+          <div class="duc2-status-badges">
+            <span id="duc2StatusBadge" class="duc2-state-pill state-new">Chưa mở ca</span>
+            <span id="duc2SyncBadge" class="autosave-badge" style="display:none;">
+              <span class="autosave-dot"></span>
+              <span id="duc2SyncText">Đã đồng bộ</span>
+            </span>
+            <button type="button" class="btn btn-sm btn-outline" id="duc2BtnSyncRetry" style="display:none;">🔄 Đồng bộ ngay</button>
+          </div>
+        </div>
+
+        <div class="grid grid-3 mt-2">
+          <div class="form-group">
+            <div class="label-with-chips">
+              <label for="duc2ReportDate">Ngày Lập Báo Cáo <span class="req">*</span></label>
+              <div class="quick-date-chips">
+                <button type="button" class="btn-chip" id="duc2BtnDateToday">Hôm nay</button>
+                <button type="button" class="btn-chip" id="duc2BtnDateYesterday">Hôm qua</button>
+              </div>
+            </div>
+            <input type="date" id="duc2ReportDate" required>
+          </div>
+          <div class="form-group">
+            <label for="duc2ShiftNum">Ca Làm Việc <span class="req">*</span></label>
+            <select id="duc2ShiftNum" required>
+              <option value="1">Ca 1 (06:00 - 14:00)</option>
+              <option value="2">Ca 2 (14:00 - 22:00)</option>
+              <option value="3">Ca 3 (22:00 - 06:00)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="duc2ShiftLeader">Trưởng Ca</label>
+            <input type="text" id="duc2ShiftLeader" readonly>
+          </div>
+        </div>
+
+        <!-- Banner khi chưa mở ca -->
+        <div id="duc2PreOpenBanner" class="duc2-preopen-box mt-2" style="display:none;">
+          <div class="duc2-preopen-info">
+            <div class="banner-title">Ca này chưa bắt đầu ghi nhận trực tiếp</div>
+            <div id="duc2CarryoverHint" class="banner-desc">Đang kiểm tra dữ liệu kế thừa từ ca trước...</div>
+          </div>
+          <button type="button" class="btn btn-primary btn-lg" id="duc2BtnOpenShift">▶ BẮT ĐẦU CA LÀM VIỆC</button>
+        </div>
+
+        <!-- Banner khi ca đã chốt hoặc bị khóa -->
+        <div id="duc2ShiftLockBanner" class="shift-status-banner info mt-2" style="display:none;"></div>
+
+        <!-- Strip KPI live khi đang mở ca -->
+        <div id="duc2LiveKpiStrip" class="duc2-kpi-strip mt-2" style="display:none;">
+          <div class="duc2-kpi-chip">
+            <small>Lù đã rót</small>
+            <strong id="duc2KpiPouring">0 / 18</strong>
+          </div>
+          <div class="duc2-kpi-chip">
+            <small>Khuôn tạo hình</small>
+            <strong id="duc2KpiMoldsCreated">0</strong>
+          </div>
+          <div class="duc2-kpi-chip">
+            <small>Thanh chặn còn</small>
+            <strong id="duc2KpiStopper">0 cái</strong>
+          </div>
+          <div class="duc2-kpi-chip">
+            <small>Cốc rót còn</small>
+            <strong id="duc2KpiNozzle">0 cái</strong>
+          </div>
+          <div class="duc2-kpi-actions">
+            <button type="button" class="btn btn-sm btn-outline" id="duc2BtnTopPreview">👁 Xem mẫu A4</button>
+            <button type="button" class="btn btn-sm btn-success" id="duc2BtnTopExport">📥 Xuất Excel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Không gian nhập liệu chính PX ĐÚC 2 -->
+      <div id="duc2Workspace" style="display:none;">
+
+        <!-- MỤC 1: THÔNG TIN CA, AN TOÀN & CHẤM CÔNG -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-1">1</span>
+              <h2>Thông Tin Ca, An Toàn &amp; Chấm Công</h2>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="duc2BtnToggleInfo">Thu gọn ▲</button>
+          </div>
+
+          <div id="duc2InfoBody">
+            <div class="grid grid-4">
+              <div class="form-group">
+                <label for="duc2StartTime">Giờ BĐ Ca</label>
+                <input type="text" id="duc2StartTime" placeholder="VD: 3h00'" maxlength="40">
+              </div>
+              <div class="form-group">
+                <label for="duc2EndTime">Giờ KT Ca</label>
+                <input type="text" id="duc2EndTime" placeholder="VD: 11h00'" maxlength="40">
+              </div>
+              <div class="form-group">
+                <label for="duc2DocCode">Mã Hiệu (nếu có)</label>
+                <input type="text" id="duc2DocCode" placeholder="VD: BM-SX-02" maxlength="60">
+              </div>
+              <div class="form-group">
+                <label for="duc2DocNumber">Số / Năm</label>
+                <input type="text" id="duc2DocNumber" placeholder="VD: 12 / Năm 2026" maxlength="60">
+              </div>
+            </div>
+
+            <div class="grid grid-3 mt-2">
+              <div class="form-group">
+                <label for="duc2DefaultProduct">Tên SP Mặc Định Ca</label>
+                <input type="text" id="duc2DefaultProduct" list="duc2PresetProducts" placeholder="VD: Bi 40" maxlength="80">
+              </div>
+              <div class="form-group">
+                <label for="duc2DefaultCustomer">Khách Hàng Mặc Định Ca</label>
+                <input type="text" id="duc2DefaultCustomer" list="duc2PresetCustomers" placeholder="VD: Molycop" maxlength="80">
+              </div>
+              <div class="form-group">
+                <label for="duc2DefaultSteelGrade">Mác Thép Mặc Định Ca</label>
+                <input type="text" id="duc2DefaultSteelGrade" list="duc2PresetSteelGrades" placeholder="VD: Cr18-19.5" maxlength="80">
+              </div>
+            </div>
+
+            <div class="grid grid-2 mt-2">
+              <div class="checkbox-group">
+                <label class="custom-checkbox">
+                  <input type="checkbox" id="duc2SafetyProd" checked>
+                  <span class="checkmark"></span>
+                  <span>Điều kiện sản xuất (BT)</span>
+                </label>
+                <label class="custom-checkbox">
+                  <input type="checkbox" id="duc2SafetyPpe" checked>
+                  <span class="checkmark"></span>
+                  <span>Bảo hộ đầy đủ</span>
+                </label>
+                <label class="custom-checkbox">
+                  <input type="checkbox" id="duc2SafetyEquip" checked>
+                  <span class="checkmark"></span>
+                  <span>Thiết bị an toàn</span>
+                </label>
+              </div>
+              <div class="sub-card">
+                <h3 class="sub-card-title">Chấm Công Ca Đúc 2</h3>
+                <div class="grid grid-2">
+                  <div class="form-group">
+                    <label for="duc2StaffTotal">Tổng Sĩ Số</label>
+                    <input type="number" id="duc2StaffTotal" value="16" min="1" max="500" step="1" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label for="duc2StaffPresent">Có Mặt</label>
+                    <input type="number" id="duc2StaffPresent" value="16" min="0" max="500" step="1" inputmode="numeric">
+                  </div>
+                </div>
+                <div class="form-group mt-2">
+                  <label for="duc2LeavePermittedNames">1. Nghỉ Phép (mỗi người 1 dòng)</label>
+                  <textarea id="duc2LeavePermittedNames" rows="2" placeholder="VD:&#10;Phạm Văn Hải&#10;Nguyễn Văn Bình" maxlength="1000"></textarea>
+                </div>
+                <div class="form-group mt-2">
+                  <label for="duc2LeaveUnpermittedNames">2. Nghỉ Không Phép (để KO nếu không có)</label>
+                  <input type="text" id="duc2LeaveUnpermittedNames" value="KO" placeholder="KO" maxlength="500">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MỤC 2: LÒ RÓT ĐÁY (NHẬP TRỰC TIẾP 1 CHẠM) -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-5">2</span>
+              <h2>Lò Rót Đáy (Ghi Nhận Trực Tiếp Từng Lù)</h2>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="duc2BtnAddManualPour">+ Thêm lù thủ công</button>
+          </div>
+          <p class="section-hint">Bấm nút lò bên dưới để bắt đầu 1 lù mới ngay lúc rót (tự bấm giờ &amp; gợi ý mẻ kế tiếp). Tự động cập nhật bảng Lò nấu.</p>
+
+          <!-- Thanh nút bấm nhanh 1 chạm -->
+          <div class="duc2-quick-pour-bar" id="duc2QuickPourBar"></div>
+
+          <!-- Thẻ lù đang rót hiện tại -->
+          <div id="duc2ActivePourCard" class="duc2-active-pour-card mt-2" style="display:none;">
+            <div class="duc2-active-pour-head">
+              <div>
+                <span class="duc2-live-badge">● ĐANG RÓT</span>
+                <strong id="duc2ActivePourTitle">Lù #1</strong>
+              </div>
+              <span id="duc2ActivePourMeta" class="duc2-active-meta"></span>
+            </div>
+            <div class="grid grid-4 mt-2">
+              <div class="form-group">
+                <label for="duc2ActiveTempMax">Nhiệt độ Max (°C)</label>
+                <input type="number" id="duc2ActiveTempMax" class="input-lg input-highlight" placeholder="VD: 1495" min="500" max="2500" inputmode="numeric">
+              </div>
+              <div class="form-group">
+                <label for="duc2ActiveTempMin">Nhiệt độ Min (°C)</label>
+                <input type="number" id="duc2ActiveTempMin" class="input-lg input-highlight" placeholder="VD: 1475" min="500" max="2500" inputmode="numeric">
+              </div>
+              <div class="form-group">
+                <label for="duc2ActiveFurnaceLabel">Lò nấu số</label>
+                <input type="text" id="duc2ActiveFurnaceLabel" class="input-lg" placeholder="VD: 2.2.1" maxlength="30">
+              </div>
+              <div class="form-group">
+                <label for="duc2ActiveBatchNotes">Ghi chú lù</label>
+                <input type="text" id="duc2ActiveBatchNotes" class="input-lg" placeholder="Ghi chú (nếu có)" maxlength="500">
+              </div>
+            </div>
+            <div class="mt-2" style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-success btn-lg" id="duc2BtnFinishActivePour" style="flex:1; min-width:220px;">
+                ⏹ KẾT THÚC RÓT (Chốt giờ hiện tại)
+              </button>
+            </div>
+          </div>
+
+          <!-- Bảng danh sách các lù trong ca -->
+          <div class="table-responsive mt-2">
+            <table class="data-table duc2-pouring-table">
+              <thead>
+                <tr>
+                  <th style="width:52px;">Lù</th>
+                  <th>Tên SP</th>
+                  <th>Khách hàng</th>
+                  <th style="width:92px;">T° Max</th>
+                  <th style="width:92px;">T° Min</th>
+                  <th style="width:88px;">Bắt đầu</th>
+                  <th style="width:88px;">Kết thúc</th>
+                  <th style="width:92px;">Lò nấu số</th>
+                  <th>Ghi chú</th>
+                  <th style="width:96px;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody id="duc2PouringTbody">
+                <tr><td colspan="10" style="text-align:center; color:var(--slate-600); padding:1.25rem;">Chưa có lù rót nào trong ca. Bấm nút lò ở trên khi bắt đầu rót.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- MỤC 3: KHUÔN TẠO HÌNH -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-2">3</span>
+              <h2>Khuôn Tạo Hình</h2>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="duc2BtnAddMolding">+ Thêm dòng SP Khuôn</button>
+          </div>
+          <p class="section-hint">Nhập chỉ số đầu ca &amp; cuối ca — hệ thống tự tính <strong>Khuôn tạo hình = Chỉ số cuối − Chỉ số đầu</strong>.</p>
+          <div id="duc2MoldingContainer" class="item-cards-list"></div>
+        </div>
+
+        <!-- MỤC 4: LÒ NẤU & TIÊU HAO VẬT TƯ -->
+        <div class="card form-section">
+          <div class="section-header-flex">
+            <div class="section-header">
+              <span class="section-num sec-4">4</span>
+              <h2>Lò Nấu &amp; Tiêu Hao Vật Tư</h2>
+            </div>
+            <div class="header-action-group">
+              <button type="button" class="btn btn-sm btn-outline-info" id="duc2BtnResyncMelting">🔄 Đồng bộ lại từ Lù rót</button>
+              <button type="button" class="btn btn-sm btn-outline" id="duc2BtnAddMelting">+ Thêm lò nấu</button>
+            </div>
+          </div>
+
+          <div id="duc2MeltingContainer" class="item-cards-list"></div>
+
+          <!-- Tiêu hao vật tư -->
+          <div class="sub-card mt-2">
+            <h3 class="sub-card-title">Tiêu Hao Vật Tư (Còn lại tự động kế thừa từ ca trước)</h3>
+            <div class="grid grid-2">
+              <div class="duc2-supply-box">
+                <div class="duc2-supply-head">
+                  <strong>1. Thanh chặn</strong>
+                  <span class="duc2-supply-rem">Còn lại: <strong id="duc2StopperRemainingText">0</strong> Cái</span>
+                </div>
+                <div class="grid grid-3 mt-2">
+                  <div class="form-group">
+                    <label for="duc2StopperStart">Tồn đầu ca</label>
+                    <input type="number" id="duc2StopperStart" value="0" min="0" step="1" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label for="duc2StopperAdded">Nhập thêm</label>
+                    <input type="number" id="duc2StopperAdded" value="0" min="0" step="1" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label for="duc2StopperUsed">Tiêu hao</label>
+                    <div class="duc2-stepper">
+                      <button type="button" class="btn-step" data-supply="stopper" data-delta="-1">−1</button>
+                      <input type="number" id="duc2StopperUsed" value="0" min="0" step="1" inputmode="numeric">
+                      <button type="button" class="btn-step" data-supply="stopper" data-delta="1">+1</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="duc2-supply-box">
+                <div class="duc2-supply-head">
+                  <strong>2. Cốc rót</strong>
+                  <span class="duc2-supply-rem">Còn lại: <strong id="duc2NozzleRemainingText">0</strong> Cái</span>
+                </div>
+                <div class="grid grid-3 mt-2">
+                  <div class="form-group">
+                    <label for="duc2NozzleStart">Tồn đầu ca</label>
+                    <input type="number" id="duc2NozzleStart" value="0" min="0" step="1" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label for="duc2NozzleAdded">Nhập thêm</label>
+                    <input type="number" id="duc2NozzleAdded" value="0" min="0" step="1" inputmode="numeric">
+                  </div>
+                  <div class="form-group">
+                    <label for="duc2NozzleUsed">Tiêu hao</label>
+                    <div class="duc2-stepper">
+                      <button type="button" class="btn-step" data-supply="nozzle" data-delta="-1">−1</button>
+                      <input type="number" id="duc2NozzleUsed" value="0" min="0" step="1" inputmode="numeric">
+                      <button type="button" class="btn-step" data-supply="nozzle" data-delta="1">+1</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MỤC 5: SỰ CỐ TRONG CA & YÊU CẦU - ĐỀ XUẤT -->
+        <div class="card form-section">
+          <div class="section-header">
+            <span class="section-num sec-3">5</span>
+            <h2>Sự Cố Trong Ca &amp; Yêu Cầu - Đề Xuất</h2>
+          </div>
+
+          <div class="duc2-issue-timer-bar">
+            <input type="text" id="duc2IssueQuickName" placeholder="Tên sự cố bấm giờ (VD: Chờ nước thép)" maxlength="200">
+            <button type="button" class="btn btn-outline" id="duc2BtnIssueTimer">⏱ Bắt đầu sự cố</button>
+            <span id="duc2IssueTimerLabel" class="duc2-timer-label" style="display:none;">00:00</span>
+          </div>
+
+          <div class="grid grid-2 mt-2">
+            <div class="form-group">
+              <label for="duc2Issues">Sự Cố Trong Ca (mỗi dòng 1 sự cố)</label>
+              <textarea id="duc2Issues" rows="4" maxlength="3000" placeholder="VD:&#10;- Chờ nước thép: 30'"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="duc2Suggestions">Yêu Cầu - Đề Xuất (mỗi dòng 1 ý)</label>
+              <textarea id="duc2Suggestions" rows="4" maxlength="3000" placeholder="VD:&#10;- Thay ống khí đóng mở thanh chặn&#10;- Hàn gia cố khung bệ và miệng hứng hàng rung 1"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- KHỐI CHỐT CA, CHỮ KÝ & XUẤT BÁO CÁO -->
+        <div class="card form-section">
+          <div class="duc2-sign-footer">
+            <div class="duc2-sig-preview-wrap">
+              <div class="duc2-sig-label">Chữ ký Trưởng ca gắn vào báo cáo:</div>
+              <div id="duc2LeaderSigPreview" class="duc2-sig-preview-box">Chưa gắn chữ ký</div>
+            </div>
+            <div class="duc2-final-actions">
+              <button type="button" class="btn btn-danger-outline" id="duc2BtnDeleteShift" style="display:none;">🗑 Xóa ca</button>
+              <button type="button" class="btn btn-outline" id="duc2BtnPreviewA4">👁 Xem trước mẫu A4</button>
+              <button type="button" class="btn btn-success" id="duc2BtnExportExcel">📥 Xuất Excel (.xlsx)</button>
+              <button type="button" class="btn btn-secondary" id="duc2BtnReopenShift" style="display:none;">🔓 Mở sửa lại</button>
+              <button type="button" class="btn btn-primary btn-lg" id="duc2BtnSubmitShift">✅ CHỐT CA &amp; HOÀN TẤT</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= TAB PX ĐÚC 2 (2): DANH SÁCH CA & XUẤT EXCEL ================= -->
+    <section id="duc2-history-tab" class="tab-content">
+      <div class="card">
+        <div class="section-header-flex">
+          <div class="section-header" style="margin-bottom:0;">
+            <span class="section-num sec-2">📋</span>
+            <h2>Danh Sách Ca Sản Xuất — PX ĐÚC 2</h2>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline" id="duc2BtnRefreshHistory">🔄 Làm mới</button>
+        </div>
+
+        <div class="grid grid-4 mt-2">
+          <div class="form-group">
+            <label for="duc2HistFromDate">Từ ngày</label>
+            <input type="date" id="duc2HistFromDate">
+          </div>
+          <div class="form-group">
+            <label for="duc2HistToDate">Đến ngày</label>
+            <input type="date" id="duc2HistToDate">
+          </div>
+          <div class="form-group">
+            <label for="duc2HistStatus">Trạng thái</label>
+            <select id="duc2HistStatus">
+              <option value="">Tất cả trạng thái</option>
+              <option value="in_progress">Đang làm việc</option>
+              <option value="submitted">Đã chốt ca</option>
+            </select>
+          </div>
+          <div class="form-group" style="align-self:end;">
+            <button type="button" class="btn btn-primary btn-block" id="duc2BtnFilterHistory" style="margin-top:0;">🔍 Lọc danh sách</button>
+          </div>
+        </div>
+
+        <div class="table-responsive mt-2">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ngày</th>
+                <th>Ca</th>
+                <th>Trưởng ca</th>
+                <th>Trạng thái</th>
+                <th>Số lù rót</th>
+                <th>Khuôn (TH / Rót)</th>
+                <th>Mẻ nấu</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyDuc2History">
+              <tr><td colspan="8" style="text-align:center; padding:1.5rem;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ================= TAB 4: QUẢN LÝ TÀI KHOẢN & HỆ THỐNG (ADMIN) ================= -->
     <section id="admin-tab" class="tab-content">
       <!-- 1. QUẢN LÝ DANH MỤC SẢN XUẤT -->
@@ -447,9 +890,17 @@
           <div class="form-group">
             <label for="newPresetCategory">Loại danh mục <span class="req">*</span></label>
             <select id="newPresetCategory" required>
-              <option value="product">Sản phẩm (VD: D25, D40, D60...)</option>
-              <option value="customer">Khách hàng (VD: Molycop, VICO...)</option>
-              <option value="steel_grade">Mác thép (VD: CR18, B2...)</option>
+              <optgroup label="PX NLLT">
+                <option value="product">Sản phẩm NLLT (VD: D25, D40, D60...)</option>
+                <option value="customer">Khách hàng NLLT (VD: Molycop, VICO...)</option>
+                <option value="steel_grade">Mác thép NLLT (VD: CR18, B2...)</option>
+              </optgroup>
+              <optgroup label="PX ĐÚC 2">
+                <option value="duc2_product">Sản phẩm ĐÚC 2 (VD: Bi 40, Bi 60...)</option>
+                <option value="duc2_customer">Khách hàng ĐÚC 2 (VD: Molycop, VICO...)</option>
+                <option value="duc2_steel_grade">Mác thép ĐÚC 2 (VD: Cr18-19.5...)</option>
+                <option value="duc2_furnace">Lò nấu ĐÚC 2 (VD: 2.2, 3, 4, 5...)</option>
+              </optgroup>
             </select>
           </div>
           <div class="form-group">
@@ -479,6 +930,26 @@
             <div class="preset-list" id="listPresetSteelGrades"></div>
           </div>
         </div>
+
+        <h3 class="mt-3" style="font-size:0.98rem; color:var(--slate-700); margin-bottom:0.6rem;">🔥 Danh mục riêng PX ĐÚC 2</h3>
+        <div class="preset-columns-grid preset-duc2-grid">
+          <div class="preset-col">
+            <h3 class="preset-col-title">📦 Sản Phẩm Đúc 2</h3>
+            <div class="preset-list" id="listPresetDuc2Products"></div>
+          </div>
+          <div class="preset-col">
+            <h3 class="preset-col-title">🏢 Khách Hàng Đúc 2</h3>
+            <div class="preset-list" id="listPresetDuc2Customers"></div>
+          </div>
+          <div class="preset-col">
+            <h3 class="preset-col-title">⚙️ Mác Thép Đúc 2</h3>
+            <div class="preset-list" id="listPresetDuc2SteelGrades"></div>
+          </div>
+          <div class="preset-col">
+            <h3 class="preset-col-title">🔥 Lò Nấu Đúc 2</h3>
+            <div class="preset-list" id="listPresetDuc2Furnaces"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 2. TRUNG TÂM SAO LƯU & DỮ LIỆU HỆ THỐNG -->
@@ -505,7 +976,7 @@
         <div class="section-header-flex">
           <h2>Thêm Tài Khoản Ca Trưởng</h2>
         </div>
-        <form id="createUserForm" class="grid grid-4">
+        <form id="createUserForm" class="grid grid-3">
           <div class="form-group">
             <label for="newUsername">Tên đăng nhập</label>
             <input type="text" id="newUsername" maxlength="64" required>
@@ -525,7 +996,23 @@
               <option value="admin">Admin</option>
             </select>
           </div>
-          <div class="form-group" style="align-self: end;">
+          <div class="form-group">
+            <label for="newWorkshop">Phân xưởng phụ trách</label>
+            <select id="newWorkshop">
+              <option value="nllt">PX NLLT</option>
+              <option value="duc2">PX ĐÚC 2</option>
+              <option value="all">Tất cả phân xưởng</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="newSignatureFile">Ảnh chữ ký cố định (tùy chọn)</label>
+            <div class="sig-upload-row">
+              <input type="file" id="newSignatureFile" accept="image/*">
+              <button type="button" class="btn btn-sm btn-secondary" id="btnClearNewSignature" style="display:none;">✕</button>
+            </div>
+            <img id="newSignaturePreview" class="admin-sig-thumb" alt="Xem trước chữ ký" style="display:none; margin-top:0.35rem;">
+          </div>
+          <div class="form-group" style="grid-column: 1 / -1;">
             <button type="submit" class="btn btn-primary">+ Tạo Tài Khoản</button>
           </div>
         </form>
@@ -543,6 +1030,8 @@
                 <th>Tên đăng nhập</th>
                 <th>Họ tên</th>
                 <th>Vai trò</th>
+                <th>Phân xưởng</th>
+                <th>Chữ ký</th>
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
               </tr>
@@ -585,6 +1074,21 @@
     </div>
   </div>
 
+  <!-- MODAL XEM TRƯỚC / IN BIỂU MẪU A4 PX ĐÚC 2 -->
+  <div id="duc2PreviewModal" class="modal-overlay a4-modal-overlay" style="display:none;">
+    <div class="card a4-modal-card" role="dialog" aria-modal="true" aria-labelledby="duc2PreviewTitle">
+      <div class="a4-modal-toolbar no-print">
+        <h2 id="duc2PreviewTitle" style="margin:0;">👁 Xem Trước Báo Cáo PX ĐÚC 2 (Khổ A4)</h2>
+        <div class="a4-modal-actions">
+          <button type="button" class="btn btn-success btn-sm" id="duc2PreviewExportBtn">📥 Tải Excel (.xlsx)</button>
+          <button type="button" class="btn btn-primary btn-sm" id="duc2PreviewPrintBtn">🖨 In / Lưu PDF</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="duc2PreviewClose">✕ Đóng</button>
+        </div>
+      </div>
+      <div id="duc2PreviewContent" class="a4-preview-stage"></div>
+    </div>
+  </div>
+
   <!-- NOTIFICATION TOAST -->
   <div id="toastNotification" class="toast">
     <span id="toastMessage">Thông báo</span>
@@ -594,6 +1098,10 @@
   <datalist id="presetProducts"></datalist>
   <datalist id="presetCustomers"></datalist>
   <datalist id="presetSteelGrades"></datalist>
+  <datalist id="duc2PresetProducts"></datalist>
+  <datalist id="duc2PresetCustomers"></datalist>
+  <datalist id="duc2PresetSteelGrades"></datalist>
+  <datalist id="duc2PresetFurnaces"></datalist>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
@@ -603,6 +1111,9 @@
   <script src="supabase_adapter.js"></script>
   <script src="chart.umd.min.js"></script>
   <script src="utils.js"></script>
+  <script src="duc2_utils.js"></script>
+  <script src="duc2_excel.js"></script>
+  <script src="duc2_app.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
