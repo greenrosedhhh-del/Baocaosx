@@ -657,8 +657,16 @@
 
         const ws = window.XLSX.utils.aoa_to_sheet(wsData);
         window.XLSX.utils.book_append_sheet(wb, ws, "BaoCaoNgay");
-        window.XLSX.writeFile(wb, `Bao_Cao_${reportDate}.xlsx`);
-        return makeRes({ status: "success", message: "Đã xuất Excel thành công!" });
+        const xlsxArray = window.XLSX.write(wb, { bookType: "xlsx", type: "array" });
+        const safeDate = String(reportDate || "").replace(/-/g, "") || "report";
+        return new Response(xlsxArray, {
+          status: 200,
+          statusText: "OK",
+          headers: {
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Disposition": `attachment; filename="BAO_CAO_TONG_HOP_${safeDate}.xlsx"`
+          }
+        });
       }
       return makeRes({ detail: "Thư viện Excel đang tải, vui lòng thử lại sau 2 giây" }, 500);
     }
