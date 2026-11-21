@@ -336,9 +336,9 @@
         customers: customers.length ? customers : ["Molycop", "Nhập TQ", "Khô dầu", "VICO"],
         steel_grades: steel_grades.length ? steel_grades : ["CR18", "18", "CR20", "B2"],
         shift_hours: {
-          1: { start: "6h", end: "14h" },
-          2: { start: "14h", end: "22h" },
-          3: { start: "22h", end: "6h" }
+          1: { start: "19h30", end: "3h30" },
+          2: { start: "3h00", end: "11h00" },
+          3: { start: "11h00", end: "19h30" }
         }
       });
     }

@@ -588,11 +588,17 @@
       ws.getRow(37).height = Math.max(ws.getRow(37).height || 15, 15 * suggLines);
     }
 
-    // 8. Thời gian làm việc các ca (I37:L39)
+    // 8. Thời gian làm việc các ca (I37:L39) — ưu tiên giờ ca trưởng đã nhập nếu có
+    const shiftTimeByNum = {};
+    ((summaryData && summaryData.shifts) || []).forEach(s => {
+      if (s && s.shift_num && s.start_time && s.end_time) {
+        shiftTimeByNum[s.shift_num] = `${String(s.start_time).trim()} - ${String(s.end_time).trim()} `;
+      }
+    });
     const SHIFT_TIME_DATA = [
-      ["Thời gian làm việc của Ca 1 từ :   ", "6h - 14h "],
-      ["Thời gian làm việc của Ca 2 từ :  ", "14h - 22h "],
-      ["Thời gian làm việc của Ca 3 từ :  ", "22h - 6h "]
+      ["Thời gian làm việc của Ca 1 từ :   ", shiftTimeByNum[1] || "19h30 - 3h30 "],
+      ["Thời gian làm việc của Ca 2 từ :  ", shiftTimeByNum[2] || "3h00 - 11h00 "],
+      ["Thời gian làm việc của Ca 3 từ :  ", shiftTimeByNum[3] || "11h00 - 19h30 "]
     ];
     safeMergeRange(ws, "I39:L39");
     SHIFT_TIME_DATA.forEach(([label, tVal], offset) => {

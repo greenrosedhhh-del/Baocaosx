@@ -642,9 +642,9 @@ def get_presets(user: dict = Depends(auth.require_user)):
         "customers": customers,
         "steel_grades": steel_grades,
         "shift_hours": {
-            1: {"start": "6h", "end": "14h"},
-            2: {"start": "14h", "end": "22h"},
-            3: {"start": "22h", "end": "6h"}
+            1: {"start": "19h30", "end": "3h30"},
+            2: {"start": "3h00", "end": "11h00"},
+            3: {"start": "11h00", "end": "19h30"}
         }
     }
 

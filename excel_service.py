@@ -117,9 +117,9 @@ _ILLEGAL_XML_CHARS_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\uff
 _FORMULA_TRIGGERS = ("=", "+", "-", "@")
 
 SHIFT_TIME_LINES = (
-    "Thời gian làm việc của Ca 1 từ :   6h - 14h ",
-    "Thời gian làm việc của Ca 2 từ :  14h - 22h ",
-    "Thời gian làm việc của Ca 3 từ :  22h - 6h ",
+    "Thời gian làm việc của Ca 1 từ :   19h30 - 3h30 ",
+    "Thời gian làm việc của Ca 2 từ :  3h00 - 11h00 ",
+    "Thời gian làm việc của Ca 3 từ :  11h00 - 19h30 ",
 )
 
 
@@ -499,9 +499,9 @@ def generate_excel_report(summary_data: dict, output_path: str = None) -> str:
 
     # 8. Thời gian làm việc các ca: thay hẳn 2 nhãn mẫu ở I37/I38, 3 dòng liền nhau ngay dưới tiêu đề
     SHIFT_TIME_DATA = (
-        ("Thời gian làm việc của Ca 1 từ :   ", "6h - 14h "),
-        ("Thời gian làm việc của Ca 2 từ :  ", "14h - 22h "),
-        ("Thời gian làm việc của Ca 3 từ :  ", "22h - 6h "),
+        ("Thời gian làm việc của Ca 1 từ :   ", "19h30 - 3h30 "),
+        ("Thời gian làm việc của Ca 2 từ :  ", "3h00 - 11h00 "),
+        ("Thời gian làm việc của Ca 3 từ :  ", "11h00 - 19h30 "),
     )
     _merge_range(ws, "I39:L39")
     for offset, (label, t_val) in enumerate(SHIFT_TIME_DATA):
