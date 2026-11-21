@@ -104,7 +104,16 @@
     return cell.isMerged && cell.master ? cell.master : cell;
   }
 
+  function detachCellStyle(cell) {
+    // ExcelJS 4.4.0 dùng chung object style giữa các ô có cùng styleId trong template;
+    // cần tách bản sao trước khi sửa font/numFmt/alignment để không làm lem định dạng (vd: 0.00) sang ô khác.
+    if (cell && cell.style) {
+      cell.style = { ...cell.style };
+    }
+  }
+
   function applyRedFont(cell) {
+    detachCellStyle(cell);
     const base = cell.font ? { ...cell.font } : { name: "Times New Roman", size: 11 };
     base.color = { argb: RED_ARGB };
     cell.font = base;
@@ -115,6 +124,8 @@
     const cell = anchorCell(ws, row, col);
     if (options.red) {
       applyRedFont(cell);
+    } else if (options.numberFormat) {
+      detachCellStyle(cell);
     }
     if (typeof val === "string") {
       const text = cleanText(val);
@@ -139,6 +150,8 @@
     const cell = anchorCell(ws, row, col);
     if (options.red) {
       applyRedFont(cell);
+    } else if (options.numberFormat) {
+      detachCellStyle(cell);
     }
     const cleanFormula = String(formulaStr).replace(/^=/, "");
     const payload = { formula: cleanFormula };
@@ -449,7 +462,8 @@
       setCell(ws, r, 4, item.to_val || "", { red: true });
       setCell(ws, r, 5, item.steel_grade || "", { red: true });
       const basketCount = item.basket_count !== null && item.basket_count !== undefined ? toNum(item.basket_count) : null;
-      setCell(ws, r, 7, basketCount !== null ? basketCount : "", { red: true });
+      const basketFmt = basketCount !== null && Number.isInteger(basketCount) ? NUM_FMT_THOUSANDS : "General";
+      setCell(ws, r, 7, basketCount !== null ? basketCount : "", { red: true, numberFormat: basketFmt });
 
       const totalWeight = item.total_weight !== null && item.total_weight !== undefined ? toNum(item.total_weight) : null;
       if (totalWeight !== null) {

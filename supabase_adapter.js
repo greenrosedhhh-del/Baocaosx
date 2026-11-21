@@ -436,54 +436,94 @@
       const rotNotesList = shifts.filter(s => s.leave_rotating_names).map(s => `Ca ${s.shift_num}: ${s.leave_rotating_names}`);
       const unpNotesList = shifts.filter(s => s.leave_unpermitted_names).map(s => `Ca ${s.shift_num}: ${s.leave_unpermitted_names}`);
 
-      // Gộp dòng packaging
+      const normKey = v => String(v || "").trim().toLowerCase();
+
+      // Gộp dòng packaging theo Sản phẩm + Khách hàng (giống server.py)
       const pkgMap = {};
       (pkgRes.data || []).forEach(p => {
-        const k = `${p.product_name || ""}|${p.customer || ""}|${p.from_val || ""}|${p.to_val || ""}`;
+        const k = `${normKey(p.product_name)}|${normKey(p.customer)}`;
         if (!pkgMap[k]) {
-          pkgMap[k] = { ...p, weight_sorted: 0, weight_waste: 0, notes: [] };
+          pkgMap[k] = {
+            ...p,
+            product_name: String(p.product_name || "").trim(),
+            customer: String(p.customer || "").trim(),
+            weight_sorted: 0,
+            weight_waste: 0,
+            notes: [],
+            _count: 0
+          };
         }
-        pkgMap[k].weight_sorted += (p.weight_sorted || 0);
-        pkgMap[k].weight_waste += (p.weight_waste || 0);
-        if (p.notes) pkgMap[k].notes.push(p.notes);
+        pkgMap[k]._count += 1;
+        if (pkgMap[k]._count > 1) {
+          pkgMap[k].from_val = "";
+          pkgMap[k].to_val = "";
+        }
+        pkgMap[k].weight_sorted += (Number(p.weight_sorted) || 0);
+        pkgMap[k].weight_waste += (Number(p.weight_waste) || 0);
+        if (p.notes && String(p.notes).trim()) pkgMap[k].notes.push(String(p.notes).trim());
       });
-      const packagingList = Object.values(pkgMap).map(p => ({
-        ...p,
-        notes: p.notes.join("; ")
-      }));
+      const packagingList = Object.values(pkgMap)
+        .sort((a, b) => (b.weight_sorted || 0) - (a.weight_sorted || 0))
+        .map(({ _count, ...p }) => ({
+          ...p,
+          notes: p.notes.join("; ")
+        }));
 
-      // Gộp dòng baskets
+      // Gộp dòng baskets (tôi dầu) theo Sản phẩm + Khách hàng + Mác thép (giống server.py)
       const bskMap = {};
       (bskRes.data || []).forEach(b => {
-        const k = `${b.product_name || ""}|${b.customer || ""}|${b.from_val || ""}|${b.to_val || ""}|${b.steel_grade || ""}`;
+        const k = `${normKey(b.product_name)}|${normKey(b.customer)}|${normKey(b.steel_grade)}`;
         if (!bskMap[k]) {
-          bskMap[k] = { ...b, basket_count: 0, total_weight: 0, notes: [] };
+          bskMap[k] = {
+            ...b,
+            product_name: String(b.product_name || "").trim(),
+            customer: String(b.customer || "").trim(),
+            steel_grade: String(b.steel_grade || "").trim(),
+            basket_count: 0,
+            total_weight: 0,
+            notes: [],
+            _count: 0
+          };
         }
-        bskMap[k].basket_count += (b.basket_count || 0);
-        bskMap[k].total_weight += (b.total_weight || 0);
-        if (b.notes) bskMap[k].notes.push(b.notes);
+        bskMap[k]._count += 1;
+        if (bskMap[k]._count > 1) {
+          bskMap[k].from_val = "";
+          bskMap[k].to_val = "";
+        }
+        const cnt = Number(b.basket_count) || 0;
+        const wt = (b.total_weight !== null && b.total_weight !== undefined) ? Number(b.total_weight) : cnt * 350;
+        bskMap[k].basket_count += cnt;
+        bskMap[k].total_weight += wt;
+        if (b.notes && String(b.notes).trim()) bskMap[k].notes.push(String(b.notes).trim());
       });
-      const basketsList = Object.values(bskMap).map(b => ({
-        ...b,
-        notes: b.notes.join("; ")
-      }));
+      const basketsList = Object.values(bskMap)
+        .sort((a, b) => (b.basket_count || 0) - (a.basket_count || 0))
+        .map(({ _count, ...b }) => ({
+          ...b,
+          notes: b.notes.join("; ")
+        }));
 
-      // Gộp dòng tumbling
+      // Gộp dòng tumbling theo Sản phẩm + Khách hàng + Ghi chú (giống server.py)
       const tmbMap = {};
       (tmbRes.data || []).forEach(t => {
-        const k = `${t.product_name || ""}|${t.customer || ""}`;
+        const noteTrim = String(t.notes || "").trim();
+        const k = `${normKey(t.product_name)}|${normKey(t.customer)}|${normKey(noteTrim)}`;
         if (!tmbMap[k]) {
-          tmbMap[k] = { ...t, m1: 0, m2: 0, total_weight: 0, notes: [] };
+          tmbMap[k] = {
+            ...t,
+            product_name: String(t.product_name || "").trim(),
+            customer: String(t.customer || "").trim(),
+            m1: 0,
+            m2: 0,
+            total_weight: 0,
+            notes: noteTrim
+          };
         }
-        tmbMap[k].m1 += (t.m1 || 0);
-        tmbMap[k].m2 += (t.m2 || 0);
-        tmbMap[k].total_weight += (t.total_weight || 0);
-        if (t.notes) tmbMap[k].notes.push(t.notes);
+        tmbMap[k].m1 += (Number(t.m1) || 0);
+        tmbMap[k].m2 += (Number(t.m2) || 0);
+        tmbMap[k].total_weight += (Number(t.total_weight) || 0);
       });
-      const tumblingList = Object.values(tmbMap).map(t => ({
-        ...t,
-        notes: t.notes.join("; ")
-      }));
+      const tumblingList = Object.values(tmbMap);
 
       const issuesList = shifts.filter(s => s.issues && s.issues !== "KO" && s.issues !== "Ko").map(s => `Ca ${s.shift_num}: ${s.issues}`);
       const suggList = shifts.filter(s => s.suggestions && s.suggestions !== "KO" && s.suggestions !== "Ko").map(s => `Ca ${s.shift_num}: ${s.suggestions}`);
