@@ -618,6 +618,11 @@
       const unpNotesList = shifts.filter(s => s.leave_unpermitted_names).map(s => `Ca ${s.shift_num}: ${s.leave_unpermitted_names}`);
 
       const normKey = v => String(v || "").trim().toLowerCase();
+      const cleanNote = v => {
+        const s = String(v || "").trim();
+        if (!s || /^(0|ko|không|khong|-|none|null)$/i.test(s)) return "";
+        return s;
+      };
 
       const pkgMap = {};
       (pkgRes.data || []).forEach(p => {
@@ -679,7 +684,7 @@
 
       const tmbMap = {};
       (tmbRes.data || []).forEach(t => {
-        const noteTrim = String(t.notes || "").trim();
+        const noteTrim = cleanNote(t.notes);
         const k = `${normKey(t.product_name)}|${normKey(t.customer)}|${normKey(noteTrim)}`;
         if (!tmbMap[k]) {
           tmbMap[k] = {
@@ -698,8 +703,8 @@
       });
       const tumblingList = Object.values(tmbMap);
 
-      const issuesList = shifts.filter(s => s.issues && s.issues !== "KO" && s.issues !== "Ko").map(s => `Ca ${s.shift_num}: ${s.issues}`);
-      const suggList = shifts.filter(s => s.suggestions && s.suggestions !== "KO" && s.suggestions !== "Ko").map(s => `Ca ${s.shift_num}: ${s.suggestions}`);
+      const issuesList = shifts.filter(s => cleanNote(s.issues)).map(s => `Ca ${s.shift_num}: ${cleanNote(s.issues)}`);
+      const suggList = shifts.filter(s => cleanNote(s.suggestions)).map(s => `Ca ${s.shift_num}: ${cleanNote(s.suggestions)}`);
 
       const totalAbsent = Math.max(0, totalStaff - totalPresent);
       let leaveDetail = "";
