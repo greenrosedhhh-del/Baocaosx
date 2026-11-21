@@ -603,6 +603,11 @@
     setCell(ws, 45, 8, `                              ${reporterName}`);
 
     // 10. Cấu hình in 1 trang A4 dọc
+    // Xóa outlineProperties đọc từ template để tránh bug của ExcelJS 4.4.0
+    // (ExcelJS ghi <pageSetUpPr> trước <outlinePr> trong <sheetPr>, sai chuẩn OOXML khiến Excel báo lỗi XML Line 2)
+    if (ws.properties && ws.properties.outlineProperties) {
+      delete ws.properties.outlineProperties;
+    }
     ws.pageSetup = {
       ...(ws.pageSetup || {}),
       paperSize: 9,
