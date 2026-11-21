@@ -68,9 +68,9 @@
       steel_grades: ['Cr18-19.5', 'Cr18', 'Cr20'],
       furnaces: ['2.2', '3', '4', '5'],
       shift_hours: {
-        1: { start: "6h00'", end: "14h00'" },
-        2: { start: "14h00'", end: "22h00'" },
-        3: { start: "22h00'", end: "6h00'" }
+        1: { start: "19h30'", end: "3h30'" },
+        2: { start: "3h00'", end: "11h00'" },
+        3: { start: "11h00'", end: "19h30'" }
       }
     },
     carryover: null,
